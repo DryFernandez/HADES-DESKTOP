@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HADES - Panel Principal</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        #sidebar {
+            z-index: 100500 !important;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 256px !important;
+            height: 100vh !important;
+            background: rgba(0, 0, 0, 0.3) !important;
+            backdrop-filter: blur(16px) !important;
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+        .main-content {
+            margin-left: 256px !important;
+            width: calc(100vw - 256px) !important;
+        }
+        .modal-overlay {
+            z-index: 100000 !important;
+            position: fixed !important;
+            top: 0 !important;
+            left: 256px !important; /* Dejar espacio para el sidebar */
+            width: calc(100vw - 256px) !important;
+            height: 100vh !important;
+            background-color: rgba(0, 0, 0, 0.5) !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        .modal-content {
+            z-index: 100001 !important;
+            position: relative !important;
+            max-width: 500px !important;
+            width: 90% !important;
+            background-color: rgb(17, 24, 39) !important;
+            border-radius: 12px !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        }
+        /* Responsive para pantallas pequeñas */
+        @media (max-width: 1024px) {
+            #sidebar {
+                transform: translateX(-100%) !important;
+            }
+            .main-content {
+                margin-left: 0 !important;
+                width: 100vw !important;
+            }
+            .modal-overlay {
+                left: 0 !important;
+                width: 100vw !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-purple-900 to-violet-900 min-h-screen text-white">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="w-64 bg-black/30 backdrop-blur-md border-r border-white/10 transition-all duration-300 ease-in-out">
+            <div class="flex flex-col h-full">
+                <!-- Logo Section -->
+                <div class="p-6 border-b border-white/10">
+                    <h1 class="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400">
+                        HADES
+                    </h1>
+                    <p class="text-gray-400 text-sm mt-1">Sistema de Administración</p>
+                </div>
+
+                <!-- Navigation Menu -->
+                <nav class="flex-1 py-6">
+                    <ul class="space-y-2 px-4">
+                        <li>
+                            <a href="#dashboard" class="nav-link active flex items-center px-4 py-3 rounded-lg transition-colors duration-200 bg-gradient-to-r from-cyan-500/20 to-purple-600/20 border border-cyan-500/30">
+                                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5a2 2 0 012-2h4a2 2 0 012 2v6H8V5z"/>
+                                </svg>
+                                <span>Dashboard</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#usuarios" class="nav-link flex items-center px-4 py-3 rounded-lg transition-colors duration-200 hover:bg-white/10">
+                                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"/>
+                                </svg>
+                                <span>Usuarios</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#empleados" class="nav-link flex items-center px-4 py-3 rounded-lg transition-colors duration-200 hover:bg-white/10">
+                                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                                </svg>
+                                <span>Empleados</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#productos" class="nav-link flex items-center px-4 py-3 rounded-lg transition-colors duration-200 hover:bg-white/10">
+                                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                                </svg>
+                                <span>Productos</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#ventas" class="nav-link flex items-center px-4 py-3 rounded-lg transition-colors duration-200 hover:bg-white/10">
+                                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                </svg>
+                                <span>Ventas</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#inventario" class="nav-link flex items-center px-4 py-3 rounded-lg transition-colors duration-200 hover:bg-white/10">
+                                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                                </svg>
+                                <span>Inventario</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#reportes" class="nav-link flex items-center px-4 py-3 rounded-lg transition-colors duration-200 hover:bg-white/10">
+                                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                                <span>Reportes</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#configuracion" class="nav-link flex items-center px-4 py-3 rounded-lg transition-colors duration-200 hover:bg-white/10">
+                                <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                </svg>
+                                <span>Configuración</span>
+                            </a>
+                        </li>
+                    </ul>
+                </nav>
+
+                <!-- User Info & Logout -->
+                <div class="border-t border-white/10 p-4">
+                    <div id="user-profile-section" class="flex items-center mb-4 p-2 rounded-lg hover:bg-white/10 transition-colors duration-200 cursor-pointer">
+                        <div class="w-10 h-10 bg-gradient-to-r from-cyan-500 to-purple-600 rounded-full flex items-center justify-center">
+                            <span class="text-sm font-bold" id="user-initial">A</span>
+                        </div>
+                        <div class="ml-3 flex-1">
+                            <p class="text-white font-medium" id="welcome-user">Admin</p>
+                            <p class="text-gray-400 text-sm" id="user-role">Administrador</p>
+                        </div>
+                        <div class="text-gray-400">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <button id="logout-btn" class="w-full px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors duration-200 text-sm font-medium flex items-center justify-center">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                        </svg>
+                        Cerrar Sesión
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <div class="flex-1 flex flex-col main-content">
+            <!-- Top Header -->
+            <header class="bg-black/20 backdrop-blur-md border-b border-white/10 px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <button id="sidebar-toggle" class="lg:hidden p-2 rounded-lg hover:bg-white/10 transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                            </svg>
+                        </button>
+                        <h2 id="page-title" class="text-xl font-semibold text-gray-200">Dashboard</h2>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <button class="p-2 rounded-lg hover:bg-white/10 transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-5 5-5-5h5v-12h0z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Page Content -->
+            <main class="flex-1 p-6 overflow-auto">
+                <div id="content-area">
+                    <!-- Content will be loaded here based on navigation -->
+                    <div class="text-center py-20">
+                        <h3 class="text-3xl font-bold text-gray-300 mb-4">Bienvenido a HADES</h3>
+                        <p class="text-gray-400">Selecciona una opción del menú para comenzar</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="./main-app.js"></script>
+</body>
+</html>

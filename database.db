@@ -1,0 +1,1207 @@
+-- =============================================
+-- SISTEMA DE COLMADOS DOMINICANOS
+-- Base de datos completa para plataforma de delivery
+-- =============================================
+
+-- Crear base de datos
+CREATE DATABASE IF NOT EXISTS HADES CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE HADES;
+
+-- =============================================
+-- 1. TABLAS DE CONFIGURACIÓN BÁSICA
+-- =============================================
+
+-- Estados generales del sistema
+CREATE TABLE estados_sistema (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    nombre VARCHAR(50) NOT NULL UNIQUE,
+    descripcion TEXT,
+    activo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tipos de movimiento de inventario
+CREATE TABLE tipos_movimiento (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    codigo VARCHAR(20) NOT NULL UNIQUE,
+    nombre VARCHAR(50) NOT NULL,
+    tipo ENUM('ENTRADA', 'SALIDA', 'AJUSTE', 'TRANSFERENCIA') NOT NULL,
+    afecta_stock BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Métodos de pago
+CREATE TABLE metodos_pago (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    nombre VARCHAR(50) NOT NULL,
+    codigo VARCHAR(20) NOT NULL UNIQUE,
+    activo BOOLEAN DEFAULT TRUE,
+    requiere_referencia BOOLEAN DEFAULT FALSE,
+    es_digital BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Estados de órdenes
+CREATE TABLE estados_orden (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    codigo VARCHAR(20) NOT NULL UNIQUE,
+    nombre VARCHAR(50) NOT NULL,
+    descripcion TEXT,
+    orden_secuencia INT NOT NULL,
+    es_final BOOLEAN DEFAULT FALSE,
+    color_hex VARCHAR(7) DEFAULT '#000000',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =============================================
+-- 2. GESTIÓN DE USUARIOS Y ROLES
+-- =============================================
+
+-- Administradores del sistema (Super Admin)
+CREATE TABLE a_users (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    nombre_completo VARCHAR(100) NOT NULL,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    activo BOOLEAN DEFAULT TRUE,
+    ultimo_acceso TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Propietarios de locales
+CREATE TABLE propietarios (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    cedula VARCHAR(15) NOT NULL UNIQUE,
+    nombre_completo VARCHAR(100) NOT NULL,
+    fecha_nacimiento DATE,
+    activo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Locales/Colmados
+CREATE TABLE locales (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    propietario_id INT NOT NULL,
+    codigo_local VARCHAR(20) NOT NULL UNIQUE,
+    nombre_comercial VARCHAR(100) NOT NULL,
+    rnc VARCHAR(15),
+    logo_url VARCHAR(255),
+    descripcion TEXT,
+    activo BOOLEAN DEFAULT TRUE,
+    fecha_apertura DATE,
+    rating_promedio DECIMAL(2,1) DEFAULT 0.0,
+    total_reviews INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (propietario_id) REFERENCES propietarios(id) ON DELETE CASCADE
+);
+
+-- Usuarios administradores de locales
+CREATE TABLE users (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    local_id INT NOT NULL,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    nombre_completo VARCHAR(100) NOT NULL,
+    cedula VARCHAR(15) NOT NULL UNIQUE,
+    cargo VARCHAR(50),
+    es_propietario BOOLEAN DEFAULT FALSE,
+    activo BOOLEAN DEFAULT TRUE,
+    ultimo_acceso TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (local_id) REFERENCES locales(id) ON DELETE CASCADE
+);
+
+-- Roles de empleados
+CREATE TABLE roles_empleados (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    nombre VARCHAR(50) NOT NULL UNIQUE,
+    descripcion TEXT,
+    permisos JSON,
+    activo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Empleados de locales
+CREATE TABLE empleados (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    local_id INT NOT NULL,
+    rol_id INT NOT NULL,
+    cedula VARCHAR(15) NOT NULL UNIQUE,
+    nombre_completo VARCHAR(100) NOT NULL,
+    fecha_nacimiento DATE,
+    salario DECIMAL(10,2),
+    activo BOOLEAN DEFAULT TRUE,
+    fecha_ingreso DATE DEFAULT (CURDATE()),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (local_id) REFERENCES locales(id) ON DELETE CASCADE,
+    FOREIGN KEY (rol_id) REFERENCES roles_empleados(id)
+);
+
+-- Clientes del sistema
+CREATE TABLE clientes (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    cedula VARCHAR(15) UNIQUE,
+    nombre_completo VARCHAR(100) NOT NULL,
+    fecha_nacimiento DATE,
+    genero ENUM('M', 'F', 'O') NULL,
+    activo BOOLEAN DEFAULT TRUE,
+    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ultimo_pedido TIMESTAMP NULL,
+    total_pedidos INT DEFAULT 0,
+    total_gastado DECIMAL(12,2) DEFAULT 0.00,
+    puntos_lealtad INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- =============================================
+-- 3. DATOS DE CONTACTO (NORMALIZADOS)
+-- =============================================
+
+-- Teléfonos
+CREATE TABLE telefonos (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    numero VARCHAR(15) NOT NULL,
+    tipo ENUM('MOVIL', 'CASA', 'TRABAJO', 'WHATSAPP', 'LOCAL') DEFAULT 'MOVIL',
+    es_principal BOOLEAN DEFAULT FALSE,
+    activo BOOLEAN DEFAULT TRUE,
+    -- Campos polimórficos
+    entidad_tipo ENUM('CLIENTE', 'USUARIO', 'EMPLEADO', 'PROPIETARIO', 'LOCAL', 'PROVEEDOR') NOT NULL,
+    entidad_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_entidad (entidad_tipo, entidad_id)
+);
+
+-- Correos electrónicos
+CREATE TABLE correos (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    email VARCHAR(100) NOT NULL,
+    tipo ENUM('PERSONAL', 'TRABAJO', 'COMERCIAL') DEFAULT 'PERSONAL',
+    es_principal BOOLEAN DEFAULT FALSE,
+    verificado BOOLEAN DEFAULT FALSE,
+    activo BOOLEAN DEFAULT TRUE,
+    -- Campos polimórficos
+    entidad_tipo ENUM('CLIENTE', 'USUARIO', 'EMPLEADO', 'PROPIETARIO', 'LOCAL', 'PROVEEDOR') NOT NULL,
+    entidad_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_entidad (entidad_tipo, entidad_id)
+);
+
+-- Direcciones
+CREATE TABLE direcciones (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    direccion_completa TEXT NOT NULL,
+    sector VARCHAR(100),
+    ciudad VARCHAR(50) DEFAULT 'Santo Domingo',
+    provincia VARCHAR(50) DEFAULT 'Distrito Nacional',
+    codigo_postal VARCHAR(10),
+    referencia TEXT,
+    latitud DECIMAL(10, 8),
+    longitud DECIMAL(11, 8),
+    es_principal BOOLEAN DEFAULT FALSE,
+    activo BOOLEAN DEFAULT TRUE,
+    -- Campos polimórficos
+    entidad_tipo ENUM('CLIENTE', 'USUARIO', 'EMPLEADO', 'PROPIETARIO', 'LOCAL', 'PROVEEDOR') NOT NULL,
+    entidad_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_entidad (entidad_tipo, entidad_id),
+    INDEX idx_ubicacion (latitud, longitud)
+);
+
+-- =============================================
+-- 4. GESTIÓN DE PRODUCTOS E INVENTARIO
+-- =============================================
+
+-- Categorías de productos
+CREATE TABLE categorias_productos (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    nombre VARCHAR(100) NOT NULL UNIQUE,
+    descripcion TEXT,
+    imagen_url VARCHAR(255),
+    activo BOOLEAN DEFAULT TRUE,
+    orden_display INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Marcas de productos
+CREATE TABLE marcas (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    nombre VARCHAR(100) NOT NULL UNIQUE,
+    descripcion TEXT,
+    logo_url VARCHAR(255),
+    activo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Unidades de medida
+CREATE TABLE unidades_medida (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    codigo VARCHAR(10) NOT NULL UNIQUE,
+    nombre VARCHAR(50) NOT NULL,
+    tipo ENUM('PESO', 'VOLUMEN', 'LONGITUD', 'UNIDAD', 'TIEMPO') DEFAULT 'UNIDAD',
+    factor_base DECIMAL(10,4) DEFAULT 1.0000,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Catálogo maestro de productos
+CREATE TABLE productos (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    codigo_barras VARCHAR(50) UNIQUE,
+    codigo_interno VARCHAR(30) NOT NULL UNIQUE,
+    nombre VARCHAR(150) NOT NULL,
+    descripcion TEXT,
+    categoria_id INT,
+    marca_id INT,
+    unidad_medida_id INT NOT NULL,
+    peso_neto DECIMAL(8,3),
+    volumen DECIMAL(8,3),
+    imagen_url VARCHAR(255),
+    activo BOOLEAN DEFAULT TRUE,
+    es_perecedero BOOLEAN DEFAULT FALSE,
+    dias_vencimiento INT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (categoria_id) REFERENCES categorias_productos(id),
+    FOREIGN KEY (marca_id) REFERENCES marcas(id),
+    FOREIGN KEY (unidad_medida_id) REFERENCES unidades_medida(id),
+    INDEX idx_nombre (nombre),
+    INDEX idx_categoria (categoria_id)
+);
+
+-- Inventario por local
+CREATE TABLE inventario (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    local_id INT NOT NULL,
+    producto_id INT NOT NULL,
+    stock_actual DECIMAL(10,3) NOT NULL DEFAULT 0,
+    stock_minimo DECIMAL(10,3) DEFAULT 0,
+    stock_maximo DECIMAL(10,3) DEFAULT 0,
+    precio_compra DECIMAL(10,2) DEFAULT 0.00,
+    precio_venta DECIMAL(10,2) NOT NULL,
+    margen_ganancia DECIMAL(5,2) DEFAULT 0.00,
+    disponible_venta BOOLEAN DEFAULT TRUE,
+    ubicacion_fisica VARCHAR(50),
+    fecha_ultimo_movimiento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (local_id) REFERENCES locales(id) ON DELETE CASCADE,
+    FOREIGN KEY (producto_id) REFERENCES productos(id),
+    UNIQUE KEY uk_local_producto (local_id, producto_id),
+    INDEX idx_stock_bajo (local_id, stock_actual, stock_minimo)
+);
+
+-- Movimientos de inventario
+CREATE TABLE movimientos_inventario (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    inventario_id INT NOT NULL,
+    tipo_movimiento_id INT NOT NULL,
+    cantidad DECIMAL(10,3) NOT NULL,
+    precio_unitario DECIMAL(10,2) DEFAULT 0.00,
+    stock_anterior DECIMAL(10,3) NOT NULL,
+    stock_nuevo DECIMAL(10,3) NOT NULL,
+    motivo TEXT,
+    referencia VARCHAR(50),
+    usuario_id INT,
+    empleado_id INT,
+    fecha_movimiento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (inventario_id) REFERENCES inventario(id),
+    FOREIGN KEY (tipo_movimiento_id) REFERENCES tipos_movimiento(id),
+    FOREIGN KEY (usuario_id) REFERENCES users(id),
+    FOREIGN KEY (empleado_id) REFERENCES empleados(id),
+    INDEX idx_fecha (fecha_movimiento),
+    INDEX idx_inventario (inventario_id)
+);
+
+-- =============================================
+-- 5. GESTIÓN DE PROVEEDORES
+-- =============================================
+
+-- Proveedores
+CREATE TABLE proveedores (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    codigo_proveedor VARCHAR(20) NOT NULL UNIQUE,
+    nombre_comercial VARCHAR(150) NOT NULL,
+    razon_social VARCHAR(150),
+    rnc VARCHAR(15) UNIQUE,
+    contacto_principal VARCHAR(100),
+    dias_credito INT DEFAULT 0,
+    limite_credito DECIMAL(12,2) DEFAULT 0.00,
+    activo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Órdenes de compra a proveedores
+CREATE TABLE ordenes_compra (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    local_id INT NOT NULL,
+    proveedor_id INT NOT NULL,
+    numero_orden VARCHAR(20) NOT NULL UNIQUE,
+    fecha_orden DATE NOT NULL,
+    fecha_entrega_esperada DATE,
+    fecha_entrega_real DATE NULL,
+    subtotal DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    impuesto DECIMAL(12,2) DEFAULT 0.00,
+    total DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    estado ENUM('BORRADOR', 'ENVIADA', 'CONFIRMADA', 'RECIBIDA', 'CANCELADA') DEFAULT 'BORRADOR',
+    observaciones TEXT,
+    created_by INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (local_id) REFERENCES locales(id),
+    FOREIGN KEY (proveedor_id) REFERENCES proveedores(id),
+    FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+-- Detalles de órdenes de compra
+CREATE TABLE orden_compra_detalles (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    orden_compra_id INT NOT NULL,
+    producto_id INT NOT NULL,
+    cantidad_pedida DECIMAL(10,3) NOT NULL,
+    cantidad_recibida DECIMAL(10,3) DEFAULT 0,
+    precio_unitario DECIMAL(10,2) NOT NULL,
+    descuento DECIMAL(5,2) DEFAULT 0.00,
+    subtotal DECIMAL(12,2) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (orden_compra_id) REFERENCES ordenes_compra(id) ON DELETE CASCADE,
+    FOREIGN KEY (producto_id) REFERENCES productos(id)
+);
+
+-- =============================================
+-- 6. SISTEMA DE PEDIDOS Y VENTAS
+-- =============================================
+
+-- Zonas de entrega
+CREATE TABLE zonas_entrega (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    local_id INT NOT NULL,
+    nombre_zona VARCHAR(100) NOT NULL,
+    descripcion TEXT,
+    radio_km DECIMAL(5,2),
+    centro_lat DECIMAL(10, 8),
+    centro_lng DECIMAL(11, 8),
+    poligono_coordenadas JSON, -- Para zonas irregulares
+    activa BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (local_id) REFERENCES locales(id) ON DELETE CASCADE
+);
+
+-- Tarifas de delivery
+CREATE TABLE tarifas_delivery (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    zona_entrega_id INT NOT NULL,
+    distancia_min_km DECIMAL(5,2) DEFAULT 0.00,
+    distancia_max_km DECIMAL(5,2),
+    tarifa DECIMAL(8,2) NOT NULL,
+    tiempo_estimado_min INT DEFAULT 30,
+    monto_minimo_pedido DECIMAL(10,2) DEFAULT 0.00,
+    activa BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (zona_entrega_id) REFERENCES zonas_entrega(id) ON DELETE CASCADE
+);
+
+-- Órdenes/Pedidos principales
+CREATE TABLE ordenes (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    numero_orden VARCHAR(20) NOT NULL UNIQUE,
+    local_id INT NOT NULL,
+    cliente_id INT NOT NULL,
+    direccion_entrega_id INT NOT NULL,
+    zona_entrega_id INT,
+    empleado_delivery_id INT,
+    subtotal DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    descuento DECIMAL(10,2) DEFAULT 0.00,
+    tarifa_delivery DECIMAL(8,2) DEFAULT 0.00,
+    propina DECIMAL(8,2) DEFAULT 0.00,
+    impuesto DECIMAL(10,2) DEFAULT 0.00,
+    total DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    estado_id INT NOT NULL,
+    metodo_pago_id INT NOT NULL,
+    referencia_pago VARCHAR(100),
+    observaciones TEXT,
+    tiempo_estimado_min INT DEFAULT 30,
+    fecha_pedido TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_confirmacion TIMESTAMP NULL,
+    fecha_preparacion TIMESTAMP NULL,
+    fecha_en_camino TIMESTAMP NULL,
+    fecha_entregada TIMESTAMP NULL,
+    calificacion_cliente INT CHECK (calificacion_cliente BETWEEN 1 AND 5),
+    comentario_cliente TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (local_id) REFERENCES locales(id),
+    FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+    FOREIGN KEY (direccion_entrega_id) REFERENCES direcciones(id),
+    FOREIGN KEY (zona_entrega_id) REFERENCES zonas_entrega(id),
+    FOREIGN KEY (empleado_delivery_id) REFERENCES empleados(id),
+    FOREIGN KEY (estado_id) REFERENCES estados_orden(id),
+    FOREIGN KEY (metodo_pago_id) REFERENCES metodos_pago(id),
+    INDEX idx_estado (estado_id),
+    INDEX idx_fecha (fecha_pedido),
+    INDEX idx_cliente (cliente_id),
+    INDEX idx_local (local_id)
+);
+
+-- Detalles de órdenes
+CREATE TABLE orden_detalles (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    orden_id INT NOT NULL,
+    producto_id INT NOT NULL,
+    cantidad DECIMAL(10,3) NOT NULL,
+    precio_unitario DECIMAL(10,2) NOT NULL,
+    descuento_unitario DECIMAL(10,2) DEFAULT 0.00,
+    subtotal DECIMAL(10,2) NOT NULL,
+    observaciones TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (orden_id) REFERENCES ordenes(id) ON DELETE CASCADE,
+    FOREIGN KEY (producto_id) REFERENCES productos(id)
+);
+
+-- =============================================
+-- 7. SISTEMA FINANCIERO
+-- =============================================
+
+-- Facturas
+CREATE TABLE facturas (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    orden_id INT NOT NULL,
+    numero_factura VARCHAR(20) NOT NULL UNIQUE,
+    tipo_factura ENUM('CONSUMIDOR_FINAL', 'CREDITO_FISCAL', 'GUBERNAMENTAL') DEFAULT 'CONSUMIDOR_FINAL',
+    rnc_cliente VARCHAR(15),
+    nombre_cliente VARCHAR(150) NOT NULL,
+    direccion_cliente TEXT,
+    subtotal DECIMAL(12,2) NOT NULL,
+    itbis DECIMAL(12,2) DEFAULT 0.00,
+    total DECIMAL(12,2) NOT NULL,
+    fecha_emision TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fecha_vencimiento DATE,
+    estado ENUM('EMITIDA', 'PAGADA', 'ANULADA', 'VENCIDA') DEFAULT 'EMITIDA',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (orden_id) REFERENCES ordenes(id),
+    UNIQUE KEY uk_orden_factura (orden_id)
+);
+
+-- Pagos recibidos
+CREATE TABLE pagos (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    orden_id INT NOT NULL,
+    factura_id INT,
+    metodo_pago_id INT NOT NULL,
+    monto DECIMAL(10,2) NOT NULL,
+    referencia VARCHAR(100),
+    comprobante_url VARCHAR(255),
+    fecha_pago TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    procesado_por INT,
+    observaciones TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (orden_id) REFERENCES ordenes(id),
+    FOREIGN KEY (factura_id) REFERENCES facturas(id),
+    FOREIGN KEY (metodo_pago_id) REFERENCES metodos_pago(id),
+    FOREIGN KEY (procesado_por) REFERENCES users(id)
+);
+
+-- Cuentas por cobrar (para créditos)
+CREATE TABLE cuentas_por_cobrar (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    cliente_id INT NOT NULL,
+    orden_id INT NOT NULL,
+    monto_original DECIMAL(10,2) NOT NULL,
+    monto_pendiente DECIMAL(10,2) NOT NULL,
+    fecha_credito DATE NOT NULL,
+    fecha_vencimiento DATE NOT NULL,
+    estado ENUM('ACTIVO', 'PAGADO', 'VENCIDO', 'CASTIGADO') DEFAULT 'ACTIVO',
+    observaciones TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+    FOREIGN KEY (orden_id) REFERENCES ordenes(id),
+    INDEX idx_vencimiento (fecha_vencimiento),
+    INDEX idx_cliente (cliente_id)
+);
+
+-- =============================================
+-- 8. SISTEMA DE HORARIOS Y CONFIGURACIÓN
+-- =============================================
+
+-- Horarios de atención por local
+CREATE TABLE horarios_atencion (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    local_id INT NOT NULL,
+    dia_semana TINYINT NOT NULL CHECK (dia_semana BETWEEN 1 AND 7), -- 1=Lunes, 7=Domingo
+    hora_apertura TIME NOT NULL,
+    hora_cierre TIME NOT NULL,
+    activo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (local_id) REFERENCES locales(id) ON DELETE CASCADE,
+    UNIQUE KEY uk_local_dia (local_id, dia_semana)
+);
+
+-- Días feriados
+CREATE TABLE dias_feriados (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    fecha DATE NOT NULL UNIQUE,
+    nombre VARCHAR(100) NOT NULL,
+    descripcion TEXT,
+    es_nacional BOOLEAN DEFAULT TRUE,
+    activo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Configuración general del sistema
+CREATE TABLE configuracion_sistema (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    clave VARCHAR(100) NOT NULL UNIQUE,
+    valor TEXT NOT NULL,
+    tipo ENUM('STRING', 'NUMBER', 'BOOLEAN', 'JSON') DEFAULT 'STRING',
+    descripcion TEXT,
+    categoria VARCHAR(50) DEFAULT 'GENERAL',
+    updated_by INT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (updated_by) REFERENCES a_users(id)
+);
+
+-- =============================================
+-- 9. SISTEMA DE MARKETING Y PROMOCIONES
+-- =============================================
+
+-- Promociones
+CREATE TABLE promociones (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    local_id INT,
+    codigo VARCHAR(20) NOT NULL UNIQUE,
+    nombre VARCHAR(100) NOT NULL,
+    descripcion TEXT,
+    tipo ENUM('DESCUENTO_PORCENTAJE', 'DESCUENTO_FIJO', 'PRODUCTO_GRATIS', 'ENVIO_GRATIS') NOT NULL,
+    valor DECIMAL(10,2) NOT NULL,
+    monto_minimo DECIMAL(10,2) DEFAULT 0.00,
+    fecha_inicio DATE NOT NULL,
+    fecha_fin DATE NOT NULL,
+    cantidad_maxima INT DEFAULT NULL,
+    cantidad_usada INT DEFAULT 0,
+    activa BOOLEAN DEFAULT TRUE,
+    aplica_nuevos_clientes BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (local_id) REFERENCES locales(id)
+);
+
+-- Cupones individuales
+CREATE TABLE cupones (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    promocion_id INT NOT NULL,
+    cliente_id INT,
+    codigo_cupon VARCHAR(50) NOT NULL UNIQUE,
+    usado BOOLEAN DEFAULT FALSE,
+    fecha_uso TIMESTAMP NULL,
+    orden_id INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (promocion_id) REFERENCES promociones(id),
+    FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+    FOREIGN KEY (orden_id) REFERENCES ordenes(id)
+);
+
+-- Programa de lealtad
+CREATE TABLE programa_lealtad (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    cliente_id INT NOT NULL,
+    puntos_actuales INT DEFAULT 0,
+    puntos_totales_ganados INT DEFAULT 0,
+    puntos_totales_canjeados INT DEFAULT 0,
+    nivel_lealtad ENUM('BRONCE', 'PLATA', 'ORO', 'PLATINO') DEFAULT 'BRONCE',
+    fecha_ultimo_movimiento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+    UNIQUE KEY uk_cliente_lealtad (cliente_id)
+);
+
+-- =============================================
+-- 10. REVIEWS Y CALIFICACIONES
+-- =============================================
+
+-- Reviews de locales
+CREATE TABLE reviews_locales (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    local_id INT NOT NULL,
+    cliente_id INT NOT NULL,
+    orden_id INT,
+    calificacion INT NOT NULL CHECK (calificacion BETWEEN 1 AND 5),
+    comentario TEXT,
+    fecha_review TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    activo BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (local_id) REFERENCES locales(id),
+    FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+    FOREIGN KEY (orden_id) REFERENCES ordenes(id),
+    UNIQUE KEY uk_cliente_orden (cliente_id, orden_id)
+);
+
+-- Reviews de productos
+CREATE TABLE reviews_productos (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    producto_id INT NOT NULL,
+    cliente_id INT NOT NULL,
+    orden_id INT,
+    calificacion INT NOT NULL CHECK (calificacion BETWEEN 1 AND 5),
+    comentario TEXT,
+    fecha_review TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    activo BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (producto_id) REFERENCES productos(id),
+    FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+    FOREIGN KEY (orden_id) REFERENCES ordenes(id)
+);
+
+-- =============================================
+-- 11. SISTEMA DE COMUNICACIONES
+-- =============================================
+
+-- Notificaciones del sistema
+CREATE TABLE notificaciones (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    destinatario_tipo ENUM('CLIENTE', 'USUARIO', 'EMPLEADO', 'ADMIN') NOT NULL,
+    destinatario_id INT NOT NULL,
+    tipo ENUM('INFO', 'WARNING', 'ERROR', 'SUCCESS') DEFAULT 'INFO',
+    titulo VARCHAR(150) NOT NULL,
+    mensaje TEXT NOT NULL,
+    leida BOOLEAN DEFAULT FALSE,
+    fecha_leida TIMESTAMP NULL,
+    url_accion VARCHAR(255),
+    fecha_expiracion TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_destinatario (destinatario_tipo, destinatario_id),
+    INDEX idx_leida (leida)
+);
+
+-- Log de actividades del sistema
+CREATE TABLE log_actividades (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    usuario_tipo ENUM('ADMIN', 'USUARIO', 'EMPLEADO', 'CLIENTE') NOT NULL,
+    usuario_id INT NOT NULL,
+    accion VARCHAR(100) NOT NULL,
+    modulo VARCHAR(50) NOT NULL,
+    descripcion TEXT,
+    datos_anteriores JSON,
+    datos_nuevos JSON,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    fecha_actividad TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_usuario (usuario_tipo, usuario_id),
+    INDEX idx_fecha (fecha_actividad),
+    INDEX idx_modulo (modulo)
+);
+
+-- =============================================
+-- 12. INSERCIÓN DE DATOS BÁSICOS
+-- =============================================
+
+-- Estados del sistema básicos
+INSERT INTO estados_sistema (nombre, descripcion) VALUES
+('ACTIVO', 'Estado activo general'),
+('INACTIVO', 'Estado inactivo general'),
+('PENDIENTE', 'Estado pendiente general'),
+('COMPLETADO', 'Estado completado general');
+
+-- Tipos de movimiento de inventario
+INSERT INTO tipos_movimiento (codigo, nombre, tipo, afecta_stock) VALUES
+('COMPRA', 'Compra a proveedor', 'ENTRADA', TRUE),
+('VENTA', 'Venta a cliente', 'SALIDA', TRUE),
+('AJUSTE_POS', 'Ajuste positivo', 'ENTRADA', TRUE),
+('AJUSTE_NEG', 'Ajuste negativo', 'SALIDA', TRUE),
+('MERMA', 'Producto en mal estado', 'SALIDA', TRUE),
+('DEVOLUCION', 'Devolución de cliente', 'ENTRADA', TRUE),
+('TRANSFERENCIA_IN', 'Transferencia entrante', 'ENTRADA', TRUE),
+('TRANSFERENCIA_OUT', 'Transferencia saliente', 'SALIDA', TRUE),
+('INVENTARIO_INICIAL', 'Inventario inicial', 'ENTRADA', TRUE);
+
+-- Métodos de pago
+INSERT INTO metodos_pago (nombre, codigo, requiere_referencia, es_digital) VALUES
+('Efectivo', 'EFECTIVO', FALSE, FALSE),
+('Transferencia Bancaria', 'TRANSFERENCIA', TRUE, TRUE),
+('Tarjeta de Débito', 'DEBITO', TRUE, TRUE),
+('Tarjeta de Crédito', 'CREDITO', TRUE, TRUE),
+('Pago Móvil', 'PAGO_MOVIL', TRUE, TRUE),
+('PayPal', 'PAYPAL', TRUE, TRUE),
+('Crédito del Local', 'CREDITO_LOCAL', FALSE, FALSE),
+('Puntos de Lealtad', 'PUNTOS', FALSE, TRUE);
+
+-- Estados de órdenes
+INSERT INTO estados_orden (codigo, nombre, descripcion, orden_secuencia, es_final, color_hex) VALUES
+('PENDIENTE', 'Pendiente', 'Pedido recibido, esperando confirmación', 1, FALSE, '#FFA500'),
+('CONFIRMADA', 'Confirmada', 'Pedido confirmado por el local', 2, FALSE, '#4169E1'),
+('PREPARANDO', 'Preparando', 'Pedido en preparación', 3, FALSE, '#FF6347'),
+('LISTO', 'Listo para entrega', 'Pedido listo para ser despachado', 4, FALSE, '#32CD32'),
+('EN_CAMINO', 'En camino', 'Pedido en ruta de entrega', 5, FALSE, '#9370DB'),
+('ENTREGADA', 'Entregada', 'Pedido entregado exitosamente', 6, TRUE, '#228B22'),
+('CANCELADA', 'Cancelada', 'Pedido cancelado', 7, TRUE, '#DC143C');
+
+-- Roles de empleados
+INSERT INTO roles_empleados (nombre, descripcion, permisos) VALUES
+('Administrador', 'Acceso completo al sistema del local', '["all"]'),
+('Vendedor', 'Manejo de ventas y atención al cliente', '["ventas", "clientes", "productos"]'),
+('Cajero', 'Procesamiento de pagos y facturación', '["pagos", "facturas", "caja"]'),
+('Delivery', 'Entrega de pedidos a domicilio', '["entregas", "ordenes"]'),
+('Almacenista', 'Gestión de inventario y almacén', '["inventario", "productos", "movimientos"]'),
+('Supervisor', 'Supervisión de operaciones', '["ventas", "empleados", "reportes"]');
+
+-- Categorías de productos típicas de colmados dominicanos
+INSERT INTO categorias_productos (nombre, descripcion, orden_display) VALUES
+('Bebidas Frías', 'Refrescos, cervezas, jugos, agua', 1),
+('Bebidas Calientes', 'Café, té, chocolate caliente', 2),
+('Lácteos', 'Leche, queso, yogurt, mantequilla', 3),
+('Panadería', 'Pan, galletas, pastelitos', 4),
+('Carnes y Embutidos', 'Pollo, cerdo, jamón, salchichas', 5),
+('Granos y Cereales', 'Arroz, habichuelas, lentejas, avena', 6),
+('Enlatados', 'Atún, sardinas, vegetales enlatados', 7),
+('Condimentos', 'Sal, pimienta, adobo, sazón', 8),
+('Snacks', 'Papitas, galletas, dulces', 9),
+('Productos de Limpieza', 'Detergente, desinfectante, jabón', 10),
+('Higiene Personal', 'Champú, jabón de baño, pasta dental', 11),
+('Bebidas Alcohólicas', 'Ron, cerveza, vino', 12),
+('Productos Farmacéuticos', 'Medicamentos básicos, vitaminas', 13),
+('Frutas y Vegetales', 'Productos frescos', 14),
+('Congelados', 'Helados, carnes congeladas', 15);
+
+-- Marcas populares en República Dominicana
+INSERT INTO marcas (nombre, descripcion) VALUES
+('Presidente', 'Cerveza dominicana'),
+('Coca-Cola', 'Bebidas gaseosas'),
+('Pepsi', 'Bebidas gaseosas'),
+('Nestlé', 'Productos alimenticios'),
+('Maggi', 'Condimentos y sopas'),
+('Goya', 'Productos alimenticios'),
+('Rica', 'Productos lácteos dominicanos'),
+('Pasteurizadora Rica', 'Lácteos'),
+('Induveca', 'Carnes y embutidos dominicanos'),
+('Campestre', 'Productos avícolas'),
+('Brugal', 'Ron dominicano'),
+('Barceló', 'Ron dominicano'),
+('Bermúdez', 'Ron dominicano'),
+('Colgate', 'Higiene personal'),
+('Palmolive', 'Productos de cuidado personal');
+
+-- Unidades de medida
+INSERT INTO unidades_medida (codigo, nombre, tipo, factor_base) VALUES
+('UN', 'Unidad', 'UNIDAD', 1.0000),
+('KG', 'Kilogramo', 'PESO', 1.0000),
+('G', 'Gramo', 'PESO', 0.0010),
+('LB', 'Libra', 'PESO', 0.4536),
+('L', 'Litro', 'VOLUMEN', 1.0000),
+('ML', 'Mililitro', 'VOLUMEN', 0.0010),
+('GAL', 'Galón', 'VOLUMEN', 3.7854),
+('OZ', 'Onza', 'VOLUMEN', 0.0296),
+('PAQ', 'Paquete', 'UNIDAD', 1.0000),
+('CAJ', 'Caja', 'UNIDAD', 1.0000),
+('BOT', 'Botella', 'UNIDAD', 1.0000),
+('LT', 'Lata', 'UNIDAD', 1.0000);
+
+-- Configuración inicial del sistema
+INSERT INTO configuracion_sistema (clave, valor, tipo, descripcion, categoria) VALUES
+('SISTEMA_NOMBRE', 'ColmadosRD', 'STRING', 'Nombre del sistema', 'GENERAL'),
+('SISTEMA_VERSION', '1.0.0', 'STRING', 'Versión actual del sistema', 'GENERAL'),
+('MONEDA_PRINCIPAL', 'RD, 'STRING', 'Moneda principal del sistema', 'FINANCIERO'),
+('ITBIS_PORCENTAJE', '18', 'NUMBER', 'Porcentaje de ITBIS aplicable', 'FINANCIERO'),
+('PUNTOS_POR_PESO', '1', 'NUMBER', 'Puntos de lealtad por peso gastado', 'MARKETING'),
+('DELIVERY_TIEMPO_DEFECTO', '30', 'NUMBER', 'Tiempo estimado de delivery en minutos', 'DELIVERY'),
+('STOCK_MINIMO_ALERTA', '5', 'NUMBER', 'Cantidad mínima para alerta de stock', 'INVENTARIO'),
+('DIAS_CREDITO_DEFECTO', '7', 'NUMBER', 'Días de crédito por defecto', 'FINANCIERO'),
+('RADIO_DELIVERY_KM', '5', 'NUMBER', 'Radio máximo de delivery en km', 'DELIVERY'),
+('PEDIDO_MINIMO_RD', '200', 'NUMBER', 'Monto mínimo de pedido en pesos', 'VENTAS');
+
+-- =============================================
+-- 17. DATOS DE EJEMPLO - USUARIO COMPLETO
+-- =============================================
+
+-- Insertar propietario
+INSERT INTO propietarios (cedula, nombre_completo, fecha_nacimiento) VALUES 
+('00112345678', 'Carlos Alberto Pérez Rodríguez', '1985-03-15');
+
+-- Insertar local
+INSERT INTO locales (propietario_id, codigo_local, nombre_comercial, rnc, descripcion, fecha_apertura) VALUES 
+(1, 'LOC001', 'Colmado Don Carlos', '131234567', 'Colmado familiar en el corazón de Villa Mella', '2020-01-15');
+
+-- Insertar usuario administrador del local
+INSERT INTO users (local_id, username, password_hash, nombre_completo, cedula, cargo, es_propietario) VALUES 
+(1, 'carlos.admin', '$2b$10$rX8kZKjGp2vF4LqH9Mn5O.Qy3wJxL7kR9pS1tUvW6xY2zA3bC4dE5f', 'Carlos Alberto Pérez Rodríguez', '00112345678', 'Gerente General', TRUE);
+
+-- Insertar contactos del propietario
+INSERT INTO telefonos (numero, tipo, es_principal, entidad_tipo, entidad_id) VALUES 
+('8095551234', 'MOVIL', TRUE, 'PROPIETARIO', 1),
+('8095551235', 'WHATSAPP', FALSE, 'PROPIETARIO', 1);
+
+INSERT INTO correos (email, tipo, es_principal, entidad_tipo, entidad_id) VALUES 
+('carlos.perez@colmadodoncarlos.com', 'COMERCIAL', TRUE, 'PROPIETARIO', 1);
+
+INSERT INTO direcciones (direccion_completa, sector, ciudad, provincia, es_principal, entidad_tipo, entidad_id) VALUES 
+('Calle Principal #45, Villa Mella', 'Villa Mella', 'Santo Domingo Norte', 'Santo Domingo', TRUE, 'PROPIETARIO', 1);
+
+-- Insertar dirección del local
+INSERT INTO direcciones (direccion_completa, sector, ciudad, provincia, es_principal, entidad_tipo, entidad_id) VALUES 
+('Av. Hermanas Mirabal #123, Villa Mella', 'Villa Mella', 'Santo Domingo Norte', 'Santo Domingo', TRUE, 'LOCAL', 1);
+
+INSERT INTO telefonos (numero, tipo, es_principal, entidad_tipo, entidad_id) VALUES 
+('8095559876', 'LOCAL', TRUE, 'LOCAL', 1);
+
+-- =============================================
+-- 13. VISTAS ÚTILES PARA REPORTES
+-- =============================================
+
+-- Vista de inventario con información completa
+CREATE VIEW v_inventario_completo AS
+SELECT 
+    i.id,
+    l.nombre_comercial AS local_nombre,
+    p.codigo_interno,
+    p.codigo_barras,
+    p.nombre AS producto_nombre,
+    c.nombre AS categoria,
+    m.nombre AS marca,
+    um.codigo AS unidad,
+    i.stock_actual,
+    i.stock_minimo,
+    i.precio_venta,
+    i.precio_compra,
+    (i.precio_venta - i.precio_compra) AS ganancia_unitaria,
+    i.margen_ganancia,
+    i.disponible_venta,
+    CASE 
+        WHEN i.stock_actual <= i.stock_minimo THEN 'STOCK_BAJO'
+        WHEN i.stock_actual = 0 THEN 'SIN_STOCK'
+        ELSE 'NORMAL'
+    END AS estado_stock,
+    i.fecha_ultimo_movimiento
+FROM inventario i
+JOIN locales l ON i.local_id = l.id
+JOIN productos p ON i.producto_id = p.id
+LEFT JOIN categorias_productos c ON p.categoria_id = c.id
+LEFT JOIN marcas m ON p.marca_id = m.id
+JOIN unidades_medida um ON p.unidad_medida_id = um.id
+WHERE l.activo = TRUE AND p.activo = TRUE;
+
+-- Vista de órdenes completas
+CREATE VIEW v_ordenes_completas AS
+SELECT 
+    o.id,
+    o.numero_orden,
+    l.nombre_comercial AS local_nombre,
+    CONCAT(cl.nombre_completo) AS cliente_nombre,
+    o.subtotal,
+    o.tarifa_delivery,
+    o.total,
+    eo.nombre AS estado,
+    mp.nombre AS metodo_pago,
+    o.fecha_pedido,
+    o.fecha_entregada,
+    CASE 
+        WHEN o.fecha_entregada IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, o.fecha_pedido, o.fecha_entregada)
+        ELSE NULL
+    END AS tiempo_total_minutos,
+    o.calificacion_cliente,
+    COUNT(od.id) AS cantidad_items
+FROM ordenes o
+JOIN locales l ON o.local_id = l.id
+JOIN clientes cl ON o.cliente_id = cl.id
+JOIN estados_orden eo ON o.estado_id = eo.id
+JOIN metodos_pago mp ON o.metodo_pago_id = mp.id
+LEFT JOIN orden_detalles od ON o.id = od.orden_id
+GROUP BY o.id;
+
+-- Vista de productos más vendidos
+CREATE VIEW v_productos_mas_vendidos AS
+SELECT 
+    p.id,
+    p.nombre,
+    c.nombre AS categoria,
+    SUM(od.cantidad) AS total_vendido,
+    SUM(od.subtotal) AS total_ingresos,
+    COUNT(DISTINCT od.orden_id) AS ordenes_count,
+    AVG(od.precio_unitario) AS precio_promedio
+FROM productos p
+JOIN orden_detalles od ON p.id = od.producto_id
+JOIN ordenes o ON od.orden_id = o.id
+JOIN estados_orden eo ON o.estado_id = eo.id
+LEFT JOIN categorias_productos c ON p.categoria_id = c.id
+WHERE eo.codigo = 'ENTREGADA'
+GROUP BY p.id, p.nombre, c.nombre
+ORDER BY total_vendido DESC;
+
+-- Vista de clientes VIP
+CREATE VIEW v_clientes_vip AS
+SELECT 
+    c.id,
+    c.nombre_completo,
+    c.total_pedidos,
+    c.total_gastado,
+    c.puntos_lealtad,
+    pl.nivel_lealtad,
+    c.fecha_registro,
+    c.ultimo_pedido,
+    DATEDIFF(CURDATE(), c.ultimo_pedido) AS dias_sin_comprar,
+    AVG(o.total) AS ticket_promedio,
+    AVG(o.calificacion_cliente) AS calificacion_promedio
+FROM clientes c
+LEFT JOIN programa_lealtad pl ON c.id = pl.cliente_id
+LEFT JOIN ordenes o ON c.id = o.cliente_id
+WHERE c.activo = TRUE
+GROUP BY c.id
+HAVING c.total_pedidos > 5 OR c.total_gastado > 5000
+ORDER BY c.total_gastado DESC;
+
+-- Vista de cuentas por cobrar con días vencidos calculados
+CREATE VIEW v_cuentas_por_cobrar AS
+SELECT 
+    cxc.*,
+    DATEDIFF(CURDATE(), cxc.fecha_vencimiento) AS dias_vencido,
+    CASE 
+        WHEN DATEDIFF(CURDATE(), cxc.fecha_vencimiento) <= 0 THEN 'AL_DIA'
+        WHEN DATEDIFF(CURDATE(), cxc.fecha_vencimiento) BETWEEN 1 AND 30 THEN 'VENCIDO_1_30'
+        WHEN DATEDIFF(CURDATE(), cxc.fecha_vencimiento) BETWEEN 31 AND 60 THEN 'VENCIDO_31_60'
+        WHEN DATEDIFF(CURDATE(), cxc.fecha_vencimiento) BETWEEN 61 AND 90 THEN 'VENCIDO_61_90'
+        ELSE 'VENCIDO_MAS_90'
+    END AS categoria_vencimiento,
+    c.nombre_completo AS cliente_nombre,
+    o.numero_orden
+FROM cuentas_por_cobrar cxc
+JOIN clientes c ON cxc.cliente_id = c.id
+JOIN ordenes o ON cxc.orden_id = o.id
+WHERE cxc.estado IN ('ACTIVO', 'VENCIDO');
+
+-- =============================================
+-- 14. ÍNDICES ADICIONALES PARA RENDIMIENTO
+-- =============================================
+
+-- Índices para optimizar consultas frecuentes
+CREATE INDEX idx_productos_categoria_activo ON productos (categoria_id, activo);
+CREATE INDEX idx_inventario_local_disponible ON inventario (local_id, disponible_venta);
+CREATE INDEX idx_ordenes_local_estado_fecha ON ordenes (local_id, estado_id, fecha_pedido);
+CREATE INDEX idx_ordenes_cliente_fecha ON ordenes (cliente_id, fecha_pedido DESC);
+CREATE INDEX idx_movimientos_fecha_tipo ON movimientos_inventario (fecha_movimiento, tipo_movimiento_id);
+CREATE INDEX idx_clientes_activo_registro ON clientes (activo, fecha_registro);
+CREATE INDEX idx_empleados_local_activo ON empleados (local_id, activo);
+CREATE INDEX idx_notificaciones_destinatario_leida ON notificaciones (destinatario_tipo, destinatario_id, leida);
+
+-- =============================================
+-- 15. TRIGGERS PARA AUTOMATIZACIÓN
+-- =============================================
+
+DELIMITER //
+
+-- Trigger para actualizar stock después de venta
+CREATE TRIGGER tr_actualizar_stock_venta
+AFTER INSERT ON orden_detalles
+FOR EACH ROW
+BEGIN
+    UPDATE inventario 
+    SET stock_actual = stock_actual - NEW.cantidad,
+        fecha_ultimo_movimiento = NOW()
+    WHERE producto_id = NEW.producto_id 
+    AND local_id = (SELECT local_id FROM ordenes WHERE id = NEW.orden_id);
+    
+    -- Insertar movimiento de inventario
+    INSERT INTO movimientos_inventario (
+        inventario_id, 
+        tipo_movimiento_id, 
+        cantidad, 
+        precio_unitario,
+        stock_anterior,
+        stock_nuevo,
+        referencia,
+        motivo
+    ) 
+    SELECT 
+        i.id,
+        (SELECT id FROM tipos_movimiento WHERE codigo = 'VENTA'),
+        NEW.cantidad,
+        NEW.precio_unitario,
+        i.stock_actual + NEW.cantidad,
+        i.stock_actual,
+        CONCAT('Orden: ', (SELECT numero_orden FROM ordenes WHERE id = NEW.orden_id)),
+        'Venta automática'
+    FROM inventario i 
+    WHERE i.producto_id = NEW.producto_id 
+    AND i.local_id = (SELECT local_id FROM ordenes WHERE id = NEW.orden_id);
+END//
+
+-- Trigger para actualizar totales de cliente
+CREATE TRIGGER tr_actualizar_totales_cliente
+AFTER UPDATE ON ordenes
+FOR EACH ROW
+BEGIN
+    IF NEW.estado_id = (SELECT id FROM estados_orden WHERE codigo = 'ENTREGADA') 
+       AND OLD.estado_id != (SELECT id FROM estados_orden WHERE codigo = 'ENTREGADA') THEN
+        
+        UPDATE clientes 
+        SET total_pedidos = total_pedidos + 1,
+            total_gastado = total_gastado + NEW.total,
+            ultimo_pedido = NEW.fecha_entregada
+        WHERE id = NEW.cliente_id;
+        
+        -- Agregar puntos de lealtad
+        INSERT INTO programa_lealtad (cliente_id, puntos_actuales, puntos_totales_ganados)
+        VALUES (NEW.cliente_id, FLOOR(NEW.total), FLOOR(NEW.total))
+        ON DUPLICATE KEY UPDATE 
+            puntos_actuales = puntos_actuales + FLOOR(NEW.total),
+            puntos_totales_ganados = puntos_totales_ganados + FLOOR(NEW.total),
+            fecha_ultimo_movimiento = NOW();
+    END IF;
+END//
+
+-- Trigger para actualizar rating de local
+CREATE TRIGGER tr_actualizar_rating_local
+AFTER INSERT ON reviews_locales
+FOR EACH ROW
+BEGIN
+    UPDATE locales 
+    SET rating_promedio = (
+        SELECT AVG(calificacion) 
+        FROM reviews_locales 
+        WHERE local_id = NEW.local_id AND activo = TRUE
+    ),
+    total_reviews = (
+        SELECT COUNT(*) 
+        FROM reviews_locales 
+        WHERE local_id = NEW.local_id AND activo = TRUE
+    )
+    WHERE id = NEW.local_id;
+END//
+
+-- Trigger para notificar stock bajo
+CREATE TRIGGER tr_notificar_stock_bajo
+AFTER UPDATE ON inventario
+FOR EACH ROW
+BEGIN
+    IF NEW.stock_actual <= NEW.stock_minimo AND OLD.stock_actual > OLD.stock_minimo THEN
+        INSERT INTO notificaciones (
+            destinatario_tipo,
+            destinatario_id,
+            tipo,
+            titulo,
+            mensaje
+        )
+        SELECT 
+            'USUARIO',
+            u.id,
+            'WARNING',
+            'Stock Bajo',
+            CONCAT('El producto ', p.nombre, ' tiene stock bajo: ', NEW.stock_actual, ' unidades')
+        FROM users u
+        JOIN productos p ON p.id = NEW.producto_id
+        WHERE u.local_id = NEW.local_id AND u.activo = TRUE;
+    END IF;
+END//
+
+DELIMITER ;
+
+-- =============================================
+-- 16. PROCEDIMIENTOS ALMACENADOS ÚTILES
+-- =============================================
+
+DELIMITER //
+
+-- Procedimiento para procesar una orden completa
+CREATE PROCEDURE sp_procesar_orden(
+    IN p_local_id INT,
+    IN p_cliente_id INT,
+    IN p_direccion_entrega_id INT,
+    IN p_metodo_pago_id INT,
+    IN p_productos JSON,
+    OUT p_orden_id INT,
+    OUT p_total DECIMAL(10,2)
+)
+BEGIN
+    DECLARE v_subtotal DECIMAL(10,2) DEFAULT 0.00;
+    DECLARE v_numero_orden VARCHAR(20);
+    DECLARE v_estado_pendiente INT;
+    DECLARE done INT DEFAULT FALSE;
+    DECLARE v_producto_id INT;
+    DECLARE v_cantidad DECIMAL(10,3);
+    DECLARE v_precio_unitario DECIMAL(10,2);
+    DECLARE v_subtotal_item DECIMAL(10,2);
+    
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+    
+    START TRANSACTION;
+    
+    -- Generar número de orden único
+    SET v_numero_orden = CONCAT('ORD-', DATE_FORMAT(NOW(), '%Y%m%d'), '-', LPAD(CONNECTION_ID(), 6, '0'));
+    
+    -- Obtener estado pendiente
+    SELECT id INTO v_estado_pendiente FROM estados_orden WHERE codigo = 'PENDIENTE';
+    
+    -- Crear la orden principal
+    INSERT INTO ordenes (
+        numero_orden, local_id, cliente_id, direccion_entrega_id, 
+        estado_id, metodo_pago_id, subtotal, total
+    ) VALUES (
+        v_numero_orden, p_local_id, p_cliente_id, p_direccion_entrega_id,
+        v_estado_pendiente, p_metodo_pago_id, 0.00, 0.00
+    );
+    
+    SET p_orden_id = LAST_INSERT_ID();
+    
+    -- Procesar cada producto del JSON
+    SET @sql = CONCAT('
+        INSERT INTO orden_detalles (orden_id, producto_id, cantidad, precio_unitario, subtotal)
+        SELECT ', p_orden_id, ', 
+               JSON_UNQUOTE(JSON_EXTRACT(value, "$.producto_id")),
+               JSON_UNQUOTE(JSON_EXTRACT(value, "$.cantidad")),
+               i.precio_venta,
+               JSON_UNQUOTE(JSON_EXTRACT(value, "$.cantidad")) * i.precio_venta
+        FROM JSON_TABLE(''', p_productos, ''', "$[*]" 
+            COLUMNS (
+                producto_id INT PATH "$.producto_id",
+                cantidad DECIMAL(10,3) PATH "$.cantidad"
+            )
+        ) AS t
+        JOIN inventario i ON t.producto_id = i.producto_id AND i.local_id = ', p_local_id);
+    
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+    
+    -- Calcular total
+    SELECT SUM(subtotal) INTO v_subtotal 
+    FROM orden_detalles 
+    WHERE orden_id = p_orden_id;
+    
+    -- Actualizar totales en la orden
+    UPDATE ordenes 
+    SET subtotal = v_subtotal, total = v_subtotal 
+    WHERE id = p_orden_id;
+    
+    SET p_total = v_subtotal;
+    
+    COMMIT;
+END//
+
+-- Procedimiento para reportes de ventas
+CREATE PROCEDURE sp_reporte_ventas_diario(
+    IN p_local_id INT,
+    IN p_fecha DATE
+)
+BEGIN
+    SELECT 
+        DATE(o.fecha_pedido) as fecha,
+        COUNT(*) as total_ordenes,
+        SUM(o.total) as total_ventas,
+        AVG(o.total) as ticket_promedio,
+        SUM(CASE WHEN eo.codigo = 'ENTREGADA' THEN 1 ELSE 0 END) as ordenes_completadas,
+        SUM(CASE WHEN eo.codigo = 'CANCELADA' THEN 1 ELSE 0 END) as ordenes_canceladas,
+        COUNT(DISTINCT o.cliente_id) as clientes_unicos
+    FROM ordenes o
+    JOIN estados_orden eo ON o.estado_id = eo.id
+    WHERE o.local_id = p_local_id 
+    AND DATE(o.fecha_pedido) = p_fecha
+    GROUP BY DATE(o.fecha_pedido);
+END//
+
+DELIMITER ;
