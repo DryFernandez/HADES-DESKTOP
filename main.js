@@ -102,11 +102,11 @@ app.whenReady().then(async () => {
     const connectionTest = await db.testConnection();
     if (connectionTest) {
       console.log('🚀 Base de datos lista para usar');
-      // Verificar tablas existentes
-      await db.checkTables();
+    } else {
+      console.log('⚠️ Base de datos no disponible, usando modo sin conexión');
     }
   } else {
-    console.warn('⚠️ Error en la inicialización. Revisa la configuración de MySQL.');
+    console.log('⚠️ Base de datos no inicializada, usando modo sin conexión');
   }
 
   createWindow()
@@ -255,9 +255,9 @@ ipcMain.handle('delete-empleado', async (event, id) => {
 // Handlers para productos
 // ===============================
 
-ipcMain.handle('get-productos', async (event, localId) => {
+ipcMain.handle('get-productos', async (event, localId, inventarioId = null) => {
   try {
-    const productos = await db.getProductos(localId);
+    const productos = await db.getProductos(localId, inventarioId);
     return productos;
   } catch (error) {
     console.error('❌ Error obteniendo productos:', error);
@@ -271,6 +271,16 @@ ipcMain.handle('add-producto', async (event, productoData) => {
     return result;
   } catch (error) {
     console.error('❌ Error agregando producto:', error);
+    return { success: false, message: error.message };
+  }
+});
+
+ipcMain.handle('update-producto', async (event, id, productoData) => {
+  try {
+    const result = await db.updateProducto(id, productoData);
+    return result;
+  } catch (error) {
+    console.error('❌ Error actualizando producto:', error);
     return { success: false, message: error.message };
   }
 });
@@ -331,6 +341,51 @@ ipcMain.handle('get-users', async () => {
     return { success: true, users: [] };
   } catch (error) {
     return { success: false, error: error.message };
+  }
+});
+
+// ===============================
+// Handlers para inventarios
+// ===============================
+
+// Handler para obtener inventarios por local
+ipcMain.handle('get-inventarios-por-local', async (event, localId) => {
+  try {
+    const inventarios = await db.getInventariosPorLocal(localId);
+    return inventarios;
+  } catch (error) {
+    console.error('❌ Error obteniendo inventarios por local:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('add-inventario', async (event, inventarioData) => {
+  try {
+    const result = await db.addInventario(inventarioData);
+    return result;
+  } catch (error) {
+    console.error('❌ Error agregando inventario:', error);
+    return { success: false, message: error.message };
+  }
+});
+
+ipcMain.handle('update-inventario', async (event, id, inventarioData) => {
+  try {
+    const result = await db.updateInventario(id, inventarioData);
+    return result;
+  } catch (error) {
+    console.error('❌ Error actualizando inventario:', error);
+    return { success: false, message: error.message };
+  }
+});
+
+ipcMain.handle('delete-inventario', async (event, id) => {
+  try {
+    const result = await db.deleteInventario(id);
+    return result;
+  } catch (error) {
+    console.error('❌ Error eliminando inventario:', error);
+    return { success: false, message: error.message };
   }
 });
 

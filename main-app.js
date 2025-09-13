@@ -302,7 +302,7 @@ function loadSectionContent(section) {
       loadDashboardContent();
       return;
       
-    case 'usuarios':
+    case 'users':
       content = `
         <div class="mb-6">
           <button class="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg hover:from-cyan-600 hover:to-blue-600 transition-all duration-200">
@@ -347,22 +347,8 @@ function loadSectionContent(section) {
       break;
       
     case 'inventario':
-      content = `
-        <div class="mb-6">
-          <button class="px-4 py-2 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-lg hover:from-yellow-600 hover:to-orange-600 transition-all duration-200">
-            + Actualizar Stock
-          </button>
-        </div>
-        <div class="bg-black/20 backdrop-blur-md border border-white/10 rounded-xl overflow-hidden">
-          <div class="px-6 py-4 border-b border-white/10">
-            <h3 class="text-lg font-semibold text-white">Control de Inventario</h3>
-          </div>
-          <div class="p-6">
-            <p class="text-gray-400">Control y gestión de inventario...</p>
-          </div>
-        </div>
-      `;
-      break;
+      loadInventarioContent();
+      return;
       
     case 'reportes':
       content = `
@@ -1416,28 +1402,22 @@ async function deleteEmpleado(id) {
   }
 }
 
-// Función para mostrar notificaciones
-function showNotification(message, type = 'info') {
-  const notification = document.createElement('div');
-  notification.className = `fixed top-4 right-4 z-50 px-6 py-3 rounded-lg text-white font-medium transition-all duration-300 transform translate-x-full ${
-    type === 'success' ? 'bg-green-600' :
-    type === 'error' ? 'bg-red-600' :
-    type === 'warning' ? 'bg-yellow-600' :
-    'bg-blue-600'
-  }`;
-  notification.textContent = message;
-
-  document.body.appendChild(notification);
-
-  // Animate in
-  setTimeout(() => notification.classList.remove('translate-x-full'), 100);
-
-  // Remove after 3 seconds
-  setTimeout(() => {
-    notification.classList.add('translate-x-full');
-    setTimeout(() => document.body.removeChild(notification), 300);
-  }, 3000);
-}
+// Función logout global
+window.logout = function() {
+  // Clear user data
+  localStorage.removeItem('currentUser');
+  sessionStorage.clear();
+  
+  // Show confirmation
+  if (confirm('¿Estás seguro que deseas cerrar sesión?')) {
+    // Use Electron API if available, otherwise redirect
+    if (window.electronAPI && window.electronAPI.logout) {
+      window.electronAPI.logout();
+    } else {
+      window.location.href = 'index.html';
+    }
+  }
+};
 
 // ===============================
 // Funciones para gestión de productos
@@ -1459,13 +1439,48 @@ async function loadProductosContent() {
   try {
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
   const localId = currentUser.local_id;
-  const productos = await window.electronAPI.getProductos(localId);
+  let inventarioId = currentUser.inventario_id; // Inventario específico del usuario (si existe)
+  
+  // Si no hay inventario_id específico, intentar obtener uno por defecto del local
+  let inventarioNombre = '';
+  if (!inventarioId && localId) {
+    try {
+      const inventarios = await window.electronAPI.getInventariosPorLocal(localId);
+      if (inventarios && inventarios.length > 0) {
+        // Usar el primer inventario como predeterminado
+        inventarioId = inventarios[0].id;
+        inventarioNombre = inventarios[0].nombre;
+        // Opcional: guardar en localStorage para futuras sesiones
+        currentUser.inventario_id = inventarioId;
+        currentUser.inventario_nombre = inventarioNombre;
+        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+      }
+    } catch (error) {
+      console.log('No se pudo obtener inventarios del local:', error);
+    }
+  } else if (inventarioId) {
+    // Si ya tenemos inventario_id, obtener el nombre
+    try {
+      const inventarios = await window.electronAPI.getInventariosPorLocal(localId);
+      const inventarioActual = inventarios.find(inv => inv.id === inventarioId);
+      if (inventarioActual) {
+        inventarioNombre = inventarioActual.nombre;
+      }
+    } catch (error) {
+      console.log('No se pudo obtener nombre del inventario:', error);
+    }
+  }
+  
+  // Obtener productos filtrados por inventario si existe, sino por local
+  const productos = await window.electronAPI.getProductos(localId, inventarioId);
     
     contentArea.innerHTML = `
       <div class="mb-6 flex justify-between items-center">
         <div>
           <h2 class="text-2xl font-bold text-white mb-2">Gestión de Productos</h2>
-          <p class="text-gray-400">Administra el catálogo de productos</p>
+          <p class="text-gray-400">
+            ${inventarioNombre ? `Productos del inventario: ${inventarioNombre}` : 'Administra el catálogo de productos'}
+          </p>
         </div>
         <button id="add-producto-btn" class="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg hover:from-green-600 hover:to-emerald-600 transition-all duration-200 flex items-center">
           <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1587,7 +1602,8 @@ function generateProductoRow(producto) {
       </td>
       <td class="px-6 py-4">
         <div class="text-sm font-medium text-white">${formatPrice(producto.precio_venta)}</div>
-        ${producto.costo_promedio > 0 ? `<div class="text-xs text-gray-500">Costo: ${formatPrice(producto.costo_promedio)}</div>` : ''}
+        ${producto.precio_costo > 0 ? `<div class="text-xs text-gray-500">Costo: ${formatPrice(producto.precio_costo)}</div>` : ''}
+        ${producto.precio_mayor > 0 ? `<div class="text-xs text-gray-500">Mayor: ${formatPrice(producto.precio_mayor)}</div>` : ''}
       </td>
       <td class="px-6 py-4">
         <div class="text-sm font-medium ${stockClass}">${producto.stock || 0}</div>
@@ -1702,14 +1718,231 @@ async function filterProductos() {
   await loadProductosContent();
 }
 
+
 function showProductoModal(producto = null) {
-  // TODO: Implementar modal de producto
-  showNotification(producto ? 'Función de editar producto próximamente' : 'Función de agregar producto próximamente', 'info');
+  // Eliminar modal existente si lo hay
+  const existingModal = document.querySelector('.modal-overlay');
+  if (existingModal) existingModal.remove();
+
+  const modal = document.createElement('div');
+  modal.className = 'fixed bg-black/50 flex items-center justify-center p-4 modal-overlay';
+  modal.style.cssText = 'z-index:100000;top:0;left:0;width:100vw;height:100vh;position:fixed;display:flex;';
+
+  modal.innerHTML = `
+    <div class="bg-gray-900 rounded-xl border border-white/10 w-full max-w-md relative modal-content">
+      <div class="flex justify-between items-center px-6 py-4 border-b border-white/10">
+        <h3 class="text-lg font-semibold text-white">${producto ? 'Editar Producto' : 'Agregar Producto'}</h3>
+        <button id="close-modal" class="text-gray-400 hover:text-white">&times;</button>
+      </div>
+      <form id="producto-form" class="p-6 space-y-4">
+        <div>
+          <label class="block text-gray-300 mb-1">Nombre del producto</label>
+          <input name="nombre" type="text" class="w-full px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white" required value="${producto?.nombre || ''}">
+        </div>
+        <div>
+          <label class="block text-gray-300 mb-1">Código interno</label>
+          <input name="codigo_interno" type="text" class="w-full px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white" required value="${producto?.codigo_interno || ''}">
+        </div>
+        <div>
+          <label class="block text-gray-300 mb-1">Descripción</label>
+          <textarea name="descripcion" class="w-full px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white">${producto?.descripcion || ''}</textarea>
+        </div>
+        <div>
+          <label class="block text-gray-300 mb-1">Inventario destino</label>
+          <select name="inventario_id" class="w-full px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white" required>
+            <option value="">Seleccionar inventario</option>
+          </select>
+        </div>
+        <div class="flex gap-2">
+          <div class="flex-1">
+            <label class="block text-gray-300 mb-1">Stock inicial</label>
+            <input name="stock_inicial" type="number" min="0" class="w-full px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white" required value="${producto?.stock_inicial || ''}">
+          </div>
+          <div class="flex-1">
+            <label class="block text-gray-300 mb-1">Precio de venta</label>
+            <input name="precio_venta" type="number" min="0" step="0.01" class="w-full px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white" required value="${producto?.precio_venta || ''}">
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <div class="flex-1">
+            <label class="block text-gray-300 mb-1">Precio de costo</label>
+            <input name="precio_costo" type="number" min="0" step="0.01" class="w-full px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white" value="${producto?.precio_costo || ''}">
+          </div>
+          <div class="flex-1">
+            <label class="block text-gray-300 mb-1">Precio mayorista</label>
+            <input name="precio_mayor" type="number" min="0" step="0.01" class="w-full px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white" value="${producto?.precio_mayor || ''}">
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <div class="flex-1">
+            <label class="block text-gray-300 mb-1">Categoría</label>
+            <select name="categoria_id" class="w-full px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white"></select>
+          </div>
+          <div class="flex-1">
+            <label class="block text-gray-300 mb-1">Marca</label>
+            <select name="marca_id" class="w-full px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white"></select>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <div class="flex-1">
+            <label class="block text-gray-300 mb-1">Unidad de medida</label>
+            <select name="unidad_medida_id" class="w-full px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white"></select>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 pt-4">
+          <button type="button" id="cancel-btn" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-white">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-white">${producto ? 'Guardar Cambios' : 'Agregar Producto'}</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // Cargar inventarios, categorías, marcas y unidades
+  (async () => {
+    // Obtener inventarios del local actual
+    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const localId = currentUser.local_id;
+    
+    let inventarios = [];
+    if (localId && window.electronAPI.getInventariosPorLocal) {
+      inventarios = await window.electronAPI.getInventariosPorLocal(localId);
+    }
+    
+    const [categorias, marcas, unidades] = await Promise.all([
+      window.electronAPI.getCategorias(),
+      window.electronAPI.getMarcas(),
+      window.electronAPI.getUnidadesMedida()
+    ]);
+    
+    const invSelect = modal.querySelector('select[name="inventario_id"]');
+    // Limpiar opciones existentes
+    invSelect.innerHTML = '<option value="">Seleccionar inventario</option>';
+    
+    inventarios.forEach(inv => {
+      const opt = document.createElement('option');
+      opt.value = inv.id;
+      opt.textContent = `${inv.nombre}${inv.descripcion ? ` - ${inv.descripcion}` : ''}`;
+      if (producto && producto.inventario_id == inv.id) opt.selected = true;
+      invSelect.appendChild(opt);
+    });
+    
+    const catSelect = modal.querySelector('select[name="categoria_id"]');
+    catSelect.innerHTML = '<option value="">Seleccionar categoría</option>';
+    categorias.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.nombre;
+      if (producto && producto.categoria_id == c.id) opt.selected = true;
+      catSelect.appendChild(opt);
+    });
+    
+    const marcaSelect = modal.querySelector('select[name="marca_id"]');
+    marcaSelect.innerHTML = '<option value="">Seleccionar marca</option>';
+    marcas.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.nombre;
+      if (producto && producto.marca_id == m.id) opt.selected = true;
+      marcaSelect.appendChild(opt);
+    });
+    
+    const unidadSelect = modal.querySelector('select[name="unidad_medida_id"]');
+    unidadSelect.innerHTML = '<option value="">Seleccionar unidad</option>';
+    unidades.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.id;
+      opt.textContent = u.nombre;
+      if (producto && producto.unidad_medida_id == u.id) opt.selected = true;
+      unidadSelect.appendChild(opt);
+    });
+  })();
+
+  // Event listeners
+  const closeBtn = document.getElementById('close-modal');
+  const cancelBtn = document.getElementById('cancel-btn');
+  const form = document.getElementById('producto-form');
+  const closeModal = () => { if (modal && modal.parentNode) document.body.removeChild(modal); };
+  closeBtn.addEventListener('click', closeModal);
+  cancelBtn.addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(form);
+    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const productoData = {
+      nombre: formData.get('nombre')?.trim(),
+      codigo_interno: formData.get('codigo_interno')?.trim(),
+      descripcion: formData.get('descripcion')?.trim(),
+      stock: parseInt(formData.get('stock_inicial')) || 0,
+      precio_venta: parseFloat(formData.get('precio_venta')) || 0,
+      precio_costo: parseFloat(formData.get('precio_costo')) || 0,
+      precio_mayor: parseFloat(formData.get('precio_mayor')) || 0,
+      categoria_id: parseInt(formData.get('categoria_id')) || null,
+      marca_id: parseInt(formData.get('marca_id')) || null,
+      unidad_medida_id: parseInt(formData.get('unidad_medida_id')) || 1,
+      local_id: currentUser.local_id,
+      inventario_id: parseInt(formData.get('inventario_id')) || null
+    };
+    
+    // Validación básica
+    if (!productoData.nombre || !productoData.codigo_interno) {
+      showNotification('Nombre y código interno son obligatorios', 'error');
+      return;
+    }
+    
+    if (!productoData.inventario_id) {
+      showNotification('Debes seleccionar un inventario para el producto', 'error');
+      return;
+    }
+    
+    try {
+      let result;
+      if (producto) {
+        // Actualizar producto existente
+        result = await window.electronAPI.updateProducto(producto.id, productoData);
+        if (result.success) {
+          closeModal();
+          await loadProductosContent();
+          showNotification('Producto actualizado exitosamente', 'success');
+        } else {
+          showNotification(result.message || 'Error al actualizar producto', 'error');
+        }
+      } else {
+        // Crear nuevo producto
+        result = await window.electronAPI.addProducto(productoData);
+        if (result.success) {
+          closeModal();
+          await loadProductosContent();
+          showNotification('Producto agregado exitosamente', 'success');
+        } else {
+          showNotification(result.message || 'Error al agregar producto', 'error');
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error procesando producto:', error);
+      showNotification(`Error al ${producto ? 'actualizar' : 'agregar'} producto`, 'error');
+    }
+  });
 }
 
 async function editProducto(id) {
-  // TODO: Implementar edición de producto
-  showNotification('Función de editar producto próximamente', 'info');
+  try {
+    // Obtener datos del producto para editar
+    const productos = await window.electronAPI.getProductos();
+    const producto = productos.find(p => p.id === id);
+    
+    if (producto) {
+      showProductoModal(producto);
+    } else {
+      showNotification('Producto no encontrado', 'error');
+    }
+  } catch (error) {
+    console.error('❌ Error obteniendo producto para editar:', error);
+    showNotification('Error al cargar producto para edición', 'error');
+  }
 }
 
 async function toggleProductoStatus(id, newStatus) {
@@ -1746,4 +1979,468 @@ async function deleteProducto(id) {
     console.error('❌ Error eliminando producto:', error);
     showNotification('Error al eliminar producto', 'error');
   }
+}
+
+// ===============================
+// Funciones para gestión de inventario
+// ===============================
+
+async function loadInventarioContent() {
+  if (!contentArea) return;
+  
+  // Mostrar loading
+  contentArea.innerHTML = `
+    <div class="flex items-center justify-center py-20">
+      <div class="text-center">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
+        <p class="text-gray-400">Cargando inventarios...</p>
+      </div>
+    </div>
+  `;
+  
+  try {
+    let currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    let localId = currentUser.local_id;
+    
+    console.log('🔍 === DIAGNÓSTICO DE CARGA DE INVENTARIO ===');
+    console.log('🔍 Usuario actual completo:', currentUser);
+    console.log('🔍 Local ID obtenido:', localId, 'Tipo:', typeof localId);
+    console.log('🔍 Local ID es null?', localId === null);
+    console.log('🔍 Local ID es undefined?', localId === undefined);
+    console.log('🔍 Local ID es 0?', localId === 0);
+    console.log('🔍 Local ID es cadena vacía?', localId === '');
+    console.log('🔍 Boolean(localId):', Boolean(localId));
+    console.log('🔍 !localId:', !localId);
+    console.log('🔍 localId !== 0:', localId !== 0);
+    console.log('🔍 ===========================================');
+    
+    // Si no hay local_id, intentar obtenerlo de múltiples fuentes
+    if (!localId && localId !== 0) {
+      console.log('🔍 Intentando obtener local_id para usuario:', currentUser.username);
+      
+      // Intentar obtener del perfil primero
+      try {
+        console.log('📡 Intentando obtener perfil del usuario...');
+        const profileData = await window.electronAPI.getProfileData();
+        console.log('📡 Datos del perfil obtenidos:', profileData);
+        if (profileData && profileData.local_id) {
+          localId = profileData.local_id;
+          // Actualizar localStorage con la información completa
+          currentUser.local_id = localId;
+          currentUser.local_nombre = profileData.local_nombre;
+          currentUser.id = profileData.id;
+          localStorage.setItem('currentUser', JSON.stringify(currentUser));
+          console.log('✅ Local ID obtenido del perfil:', localId);
+        } else {
+          console.log('❌ El perfil no contiene local_id válido:', profileData);
+        }
+      } catch (error) {
+        console.error('❌ Error obteniendo perfil:', error);
+      }
+      
+      // Si aún no tenemos local_id, intentar buscar en la base de datos por username
+      if (!localId && localId !== 0 && currentUser.username) {
+        try {
+          console.log('🔍 Buscando usuario en base de datos por username...');
+          // Aquí podríamos hacer una llamada específica para buscar el usuario
+          // Por ahora, asumimos que el perfil ya debería tener la información
+        } catch (error) {
+          console.error('❌ Error buscando usuario en BD:', error);
+        }
+      }
+    }
+    
+    console.log('🔍 Local ID final:', localId, 'Tipo:', typeof localId);
+    console.log('🔍 Condición de error (!localId && localId !== 0):', !localId && localId !== 0);
+    
+    // Validación más robusta del local_id
+    const isValidLocalId = (localId !== null && localId !== undefined && localId !== '' && 
+                           (typeof localId === 'number' || (typeof localId === 'string' && localId.trim() !== '')));
+    
+    if (!isValidLocalId) {
+      console.error('❌ No se pudo determinar el local_id del usuario');
+      console.error('❌ Información de depuración:');
+      console.error('   - localId:', localId);
+      console.error('   - typeof localId:', typeof localId);
+      console.error('   - currentUser completo:', currentUser);
+      
+      contentArea.innerHTML = `
+        <div class="bg-red-500/20 border border-red-500/30 rounded-xl p-6">
+          <div class="text-center">
+            <div class="text-red-400 mb-4">
+              <svg class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"/>
+              </svg>
+            </div>
+            <h3 class="text-xl font-semibold text-red-400 mb-2">No se pudo determinar el local del usuario</h3>
+            <p class="text-red-300 mb-4">No se encontró información del local asociada a tu cuenta de usuario.</p>
+            <div class="space-y-2 mb-6">
+              <p class="text-gray-400 text-sm">Posibles soluciones:</p>
+              <ul class="text-gray-400 text-sm list-disc list-inside space-y-1">
+                <li>Verifica que tu usuario esté correctamente configurado en el sistema</li>
+                <li>Contacta al administrador para verificar tu asignación de local</li>
+                <li>Cierra sesión y vuelve a iniciar para refrescar la información</li>
+                <li>Si el problema persiste, usa la función de diagnóstico en la consola</li>
+              </ul>
+            </div>
+            <div class="flex gap-3 justify-center">
+              <button onclick="loadInventarioContent()" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg text-white text-sm transition-colors">
+                Reintentar
+              </button>
+              <button onclick="window.logout()" class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white text-sm transition-colors">
+                Cerrar Sesión
+              </button>
+              <button onclick="diagnoseUserData()" class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-white text-sm transition-colors">
+                Diagnosticar
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      return;
+    }
+    
+    // Obtener inventarios del local
+    const inventarios = await window.electronAPI.getInventariosPorLocal(localId);
+    
+    // Si no hay inventarios, crear uno por defecto
+    if (!inventarios || inventarios.length === 0) {
+      console.log('📝 No hay inventarios, creando uno por defecto...');
+      try {
+        const result = await window.electronAPI.addInventario({
+          nombre: 'Inventario Principal',
+          local_id: localId
+        });
+        
+        if (result.success) {
+          console.log('✅ Inventario por defecto creado');
+          // Recargar inventarios
+          const inventariosActualizados = await window.electronAPI.getInventariosPorLocal(localId);
+          if (inventariosActualizados && inventariosActualizados.length > 0) {
+            // Usar los inventarios actualizados
+            mostrarInventarios(inventariosActualizados);
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error creando inventario por defecto:', error);
+      }
+    }
+    
+    // Función para mostrar los inventarios
+    function mostrarInventarios(inventariosData) {
+      contentArea.innerHTML = `
+        <div class="mb-6 flex justify-between items-center">
+          <div>
+            <h2 class="text-2xl font-bold text-white mb-2">Gestión de Inventarios</h2>
+            <p class="text-gray-400">Administra los inventarios de tu local</p>
+          </div>
+          <button id="add-inventario-btn" class="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg hover:from-green-600 hover:to-emerald-600 transition-all duration-200 flex items-center">
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+            </svg>
+            Nuevo Inventario
+          </button>
+        </div>
+        
+        <div class="bg-black/20 backdrop-blur-md border border-white/10 rounded-xl overflow-hidden">
+          <div class="px-6 py-4 border-b border-white/10">
+            <h3 class="text-lg font-semibold text-white">Inventarios del Local</h3>
+          </div>
+          <div class="overflow-x-auto">
+            ${inventariosData && inventariosData.length > 0 ? `
+              <table class="w-full">
+                <thead class="bg-black/30">
+                  <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">ID</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Nombre</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Descripción</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Productos</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Creado</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/10">
+                  ${inventariosData.map(inventario => `
+                    <tr class="hover:bg-white/5">
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">${inventario.id}</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">${inventario.nombre}</td>
+                      <td class="px-6 py-4 text-sm text-gray-300">${inventario.descripcion || 'Sin descripción'}</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-cyan-400">${inventario.cantidad_productos || 0} productos</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">${new Date(inventario.created_at).toLocaleDateString()}</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <button class="text-cyan-400 hover:text-cyan-300 mr-3" onclick="editInventario(${inventario.id})">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                          </svg>
+                        </button>
+                        <button class="text-red-400 hover:text-red-300" onclick="deleteInventario(${inventario.id})">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                          </svg>
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            ` : `
+              <div class="p-6 text-center">
+                <p class="text-gray-400 mb-4">No hay inventarios registrados en este local.</p>
+                <p class="text-gray-500 text-sm mb-4">Se creó automáticamente un inventario principal.</p>
+                <button onclick="loadInventarioContent()" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg text-white">
+                  Recargar
+                </button>
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+      
+      // Agregar event listener al botón de nuevo inventario
+      const addBtn = document.getElementById('add-inventario-btn');
+      if (addBtn) {
+        addBtn.addEventListener('click', () => showInventarioModal());
+      }
+    }
+    
+    // Mostrar los inventarios (usando los datos obtenidos o los actualizados)
+    mostrarInventarios(inventarios);
+    
+  } catch (error) {
+    console.error('❌ Error cargando inventarios:', error);
+    contentArea.innerHTML = `
+      <div class="bg-red-500/20 border border-red-500/30 rounded-xl p-6">
+        <h3 class="text-red-400 font-semibold mb-2">Error al cargar inventarios</h3>
+        <p class="text-red-300">${error.message || 'Ocurrió un error inesperado'}</p>
+      </div>
+    `;
+  }
+}
+
+function showInventarioModal(inventario = null) {
+  // Eliminar modal existente si lo hay
+  const existingModal = document.querySelector('.modal-overlay');
+  if (existingModal) existingModal.remove();
+
+  const modal = document.createElement('div');
+  modal.className = 'fixed bg-black/50 flex items-center justify-center p-4 modal-overlay';
+  modal.style.cssText = 'z-index:100000;top:0;left:0;width:100vw;height:100vh;position:fixed;display:flex;';
+
+  modal.innerHTML = `
+    <div class="bg-gray-900 rounded-xl border border-white/10 w-full max-w-md relative modal-content">
+      <div class="flex justify-between items-center px-6 py-4 border-b border-white/10">
+        <h3 class="text-lg font-semibold text-white">${inventario ? 'Editar Inventario' : 'Crear Nuevo Inventario'}</h3>
+        <button id="close-modal" class="text-gray-400 hover:text-white">&times;</button>
+      </div>
+      <form id="inventario-form" class="p-6 space-y-4">
+        <div>
+          <label class="block text-gray-300 mb-1">Nombre del inventario</label>
+          <input name="nombre" type="text" class="w-full px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white" required value="${inventario?.nombre || ''}" placeholder="Ej: Inventario Principal">
+        </div>
+        <div>
+          <label class="block text-gray-300 mb-1">Descripción (opcional)</label>
+          <textarea name="descripcion" class="w-full px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white" rows="3" placeholder="Descripción del inventario">${inventario?.descripcion || ''}</textarea>
+        </div>
+        <div class="flex justify-end gap-2 pt-4">
+          <button type="button" id="cancel-btn" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-white">Cancelar</button>
+          <button type="submit" class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-white">${inventario ? 'Guardar Cambios' : 'Crear Inventario'}</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // Event listeners
+  const closeBtn = document.getElementById('close-modal');
+  const cancelBtn = document.getElementById('cancel-btn');
+  const form = document.getElementById('inventario-form');
+  const closeModal = () => { if (modal && modal.parentNode) document.body.removeChild(modal); };
+  closeBtn.addEventListener('click', closeModal);
+  cancelBtn.addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(form);
+    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    
+    const inventarioData = {
+      nombre: formData.get('nombre')?.trim(),
+      descripcion: formData.get('descripcion')?.trim(),
+      local_id: currentUser.local_id
+    };
+    
+    // Validación básica
+    if (!inventarioData.nombre) {
+      showNotification('El nombre del inventario es obligatorio', 'error');
+      return;
+    }
+    
+    try {
+      let result;
+      if (inventario) {
+        // Editar inventario existente
+        result = await window.electronAPI.updateInventario(inventario.id, inventarioData);
+      } else {
+        // Crear nuevo inventario
+        result = await window.electronAPI.addInventario(inventarioData);
+      }
+      
+      if (result.success) {
+        closeModal();
+        await loadInventarioContent();
+        showNotification(`Inventario ${inventario ? 'actualizado' : 'creado'} exitosamente`, 'success');
+      } else {
+        showNotification(result.message || `Error al ${inventario ? 'actualizar' : 'crear'} inventario`, 'error');
+      }
+    } catch (error) {
+      console.error('❌ Error procesando inventario:', error);
+      showNotification(`Error al ${inventario ? 'actualizar' : 'crear'} inventario`, 'error');
+    }
+  });
+}
+
+async function editInventario(id) {
+  try {
+    // Obtener datos del inventario para editar
+    const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const inventarios = await window.electronAPI.getInventariosPorLocal(currentUser.local_id);
+    const inventario = inventarios.find(inv => inv.id === id);
+    
+    if (inventario) {
+      showInventarioModal(inventario);
+    } else {
+      showNotification('Inventario no encontrado', 'error');
+    }
+  } catch (error) {
+    console.error('❌ Error obteniendo inventario para editar:', error);
+    showNotification('Error al cargar inventario para edición', 'error');
+  }
+}
+
+async function deleteInventario(id) {
+  if (!confirm('¿Estás seguro de que deseas eliminar este inventario?\n\nEsta acción no se puede deshacer y eliminará todos los productos asociados.')) {
+    return;
+  }
+  
+  try {
+    const result = await window.electronAPI.deleteInventario(id);
+    
+    if (result.success) {
+      showNotification('Inventario eliminado exitosamente', 'success');
+      await loadInventarioContent(); // Recargar lista
+    } else {
+      showNotification(result.message || 'Error al eliminar inventario', 'error');
+    }
+  } catch (error) {
+    console.error('❌ Error eliminando inventario:', error);
+    showNotification('Error al eliminar inventario', 'error');
+  }
+}
+
+// Función logout global
+window.logout = function() {
+  // Clear user data
+  localStorage.removeItem('currentUser');
+  sessionStorage.clear();
+  
+  // Show confirmation
+  if (confirm('¿Estás seguro que deseas cerrar sesión?')) {
+    // Use Electron API if available, otherwise redirect
+    if (window.electronAPI && window.electronAPI.logout) {
+      window.electronAPI.logout();
+    } else {
+      window.location.href = 'index.html';
+    }
+  }
+};
+
+// Función de diagnóstico para debugging
+window.diagnoseUserData = async function() {
+  console.log('🔍 === DIAGNÓSTICO DE DATOS DE USUARIO ===');
+  
+  // Verificar localStorage
+  const currentUserRaw = localStorage.getItem('currentUser');
+  console.log('📦 localStorage currentUser (raw):', currentUserRaw);
+  
+  let currentUser = {};
+  try {
+    currentUser = JSON.parse(currentUserRaw || '{}');
+    console.log('📦 localStorage currentUser (parsed):', currentUser);
+  } catch (error) {
+    console.error('❌ Error parseando localStorage:', error);
+    return;
+  }
+  
+  console.log('👤 Username:', currentUser.username);
+  console.log('🆔 User ID:', currentUser.id);
+  console.log('🏪 Local ID:', currentUser.local_id, 'Tipo:', typeof currentUser.local_id);
+  console.log('🏪 Local Nombre:', currentUser.local_nombre);
+  
+  // Verificar perfil desde la base de datos
+  try {
+    console.log('📡 Consultando perfil desde BD...');
+    const profileData = await window.electronAPI.getProfileData();
+    console.log('📋 Datos del perfil:', profileData);
+    
+    if (profileData) {
+      console.log('✅ Perfil encontrado');
+      console.log('🆔 Profile ID:', profileData.id);
+      console.log('🏪 Profile Local ID:', profileData.local_id);
+      console.log('🏪 Profile Local Nombre:', profileData.local_nombre);
+      
+      // Comparar con localStorage
+      const localStorageMatches = currentUser.local_id == profileData.local_id;
+      console.log('🔍 Local ID coincide con BD:', localStorageMatches);
+      
+      if (!localStorageMatches) {
+        console.log('⚠️ Discrepancia detectada! Actualizando localStorage...');
+        currentUser.local_id = profileData.local_id;
+        currentUser.local_nombre = profileData.local_nombre;
+        currentUser.id = profileData.id;
+        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+        console.log('✅ localStorage actualizado');
+      }
+    } else {
+      console.log('❌ No se pudo obtener perfil desde BD');
+    }
+  } catch (error) {
+    console.error('❌ Error consultando perfil:', error);
+  }
+  
+  console.log('🔍 === FIN DEL DIAGNÓSTICO ===');
+  return currentUser;
+};
+
+// Función para resetear datos de usuario
+window.resetUserData = function() {
+  console.log('🔄 Reseteando datos de usuario...');
+  localStorage.removeItem('currentUser');
+  sessionStorage.clear();
+  console.log('✅ Datos reseteados. Recarga la página para volver a iniciar sesión.');
+};
+
+// Función para mostrar notificaciones
+function showNotification(message, type = 'info') {
+  const notification = document.createElement('div');
+  notification.className = `fixed top-4 right-4 z-50 px-6 py-3 rounded-lg text-white font-medium transition-all duration-300 transform translate-x-full ${
+    type === 'success' ? 'bg-green-600' :
+    type === 'error' ? 'bg-red-600' :
+    type === 'warning' ? 'bg-yellow-600' :
+    'bg-blue-600'
+  }`;
+  notification.textContent = message;
+
+  document.body.appendChild(notification);
+
+  // Animate in
+  setTimeout(() => notification.classList.remove('translate-x-full'), 100);
+
+  // Remove after 3 seconds
+  setTimeout(() => {
+    notification.classList.add('translate-x-full');
+    setTimeout(() => document.body.removeChild(notification), 300);
+  }, 3000);
 }

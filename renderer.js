@@ -116,7 +116,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           
           // Si es usuario de local, agregar información del local
           if (result.tipo_usuario === 'LOCAL' && result.local) {
-            userData.local = result.local;
+            userData.local_id = result.local.id; // Extraer local_id del objeto local
+            userData.local_nombre = result.local.nombre_comercial;
+            userData.local = result.local; // Mantener el objeto completo también
             userData.cedula = result.cedula;
             userData.cargo = result.cargo;
             userData.es_propietario = result.es_propietario;
