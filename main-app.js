@@ -750,11 +750,7 @@ async function loadEmpleadosContent() {
                      class="w-full px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:border-cyan-500 focus:outline-none">
             </div>
             <select id="filter-cargo" class="px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white focus:border-cyan-500 focus:outline-none">
-              <option value="">Todos los cargos</option>
-              <option value="Cajero">Cajero</option>
-              <option value="Vendedor">Vendedor</option>
-              <option value="Supervisor">Supervisor</option>
-              <option value="Gerente">Gerente</option>
+              <option value="">Todos los roles</option>
             </select>
             <select id="filter-estado" class="px-4 py-2 bg-black/30 border border-white/20 rounded-lg text-white focus:border-cyan-500 focus:outline-none">
               <option value="">Todos los estados</option>
@@ -850,6 +846,23 @@ async function loadEmpleadosContent() {
       console.error('❌ Error poblando tablas:', error);
     }
     
+    // Cargar roles para el filtro
+    try {
+      const roles = await window.electronAPI.getRolesEmpleados();
+      const filterSelect = document.getElementById('filter-cargo');
+      if (filterSelect && roles.length > 0) {
+        roles.forEach(rol => {
+          const option = document.createElement('option');
+          option.value = rol.nombre;
+          option.textContent = rol.nombre;
+          filterSelect.appendChild(option);
+        });
+        console.log('✅ Filtro de roles cargado correctamente');
+      }
+    } catch (error) {
+      console.error('❌ Error cargando roles para filtro:', error);
+    }
+    
   } catch (error) {
     console.error('Error cargando empleados:', error);
     contentArea.innerHTML = `
@@ -918,7 +931,7 @@ function generateEmpleadosRows(empleados) {
       <td class="px-6 py-4 text-gray-300">${empleado.cedula || 'No especificado'}</td>
       <td class="px-6 py-4">
         <span class="px-2 py-1 text-xs font-medium rounded-full bg-blue-500/20 text-blue-400">
-          ${empleado.cargo || 'Sin cargo'}
+          ${empleado.cargo || 'Sin rol asignado'}
         </span>
       </td>
       <td class="px-6 py-4 text-gray-300">${formatDate(empleado.fecha_ingreso) || 'No especificada'}</td>
@@ -935,7 +948,7 @@ function generateEmpleadosRows(empleados) {
             </svg>
           </button>
           ${canDelete ? `
-            <button data-action="delete" data-empleado-id="${empleado.id}" class="p-2 text-red-400 hover:bg-red-500/20 rounded transition-colors" title="Eliminar">
+            <button data-action="delete" data-empleado-id="${empleado.id}" class="p-2 text-red-400 hover:bg-red-500/20 rounded transition-colors" title="Desactivar">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
               </svg>
@@ -1025,10 +1038,10 @@ function setupEmpleadosEventListeners() {
   }
 
   // Filtros
-  const filterCargo = document.getElementById('filter-cargo');
+  const filterRol = document.getElementById('filter-cargo');
   const filterEstado = document.getElementById('filter-estado');
   
-  if (filterCargo) filterCargo.addEventListener('change', filterEmpleados);
+  if (filterRol) filterRol.addEventListener('change', filterEmpleados);
   if (filterEstado) filterEstado.addEventListener('change', filterEmpleados);
   
   // Event delegation para botones de acción de empleados - Tabla Activos
@@ -1183,30 +1196,25 @@ function showAddEmpleadoModal() {
                  class="w-full px-3 py-2 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:border-cyan-500 focus:outline-none">
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-2">Cédula</label>
-          <input type="text" name="cedula" placeholder="000-0000000-0"
+          <label class="block text-sm font-medium text-gray-300 mb-2">Cédula *</label>
+          <input type="text" name="cedula" required placeholder="000-0000000-0"
                  class="w-full px-3 py-2 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:border-cyan-500 focus:outline-none">
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-2">Cargo *</label>
-          <select name="cargo" required
+          <label class="block text-sm font-medium text-gray-300 mb-2">Rol *</label>
+          <select name="rol_id" required
                   class="w-full px-3 py-2 bg-black/30 border border-white/20 rounded-lg text-white focus:border-cyan-500 focus:outline-none">
-            <option value="">Seleccionar cargo</option>
-            <option value="Cajero">Cajero</option>
-            <option value="Vendedor">Vendedor</option>
-            <option value="Supervisor">Supervisor</option>
-            <option value="Gerente">Gerente</option>
-            <option value="Otro">Otro</option>
+            <option value="">Seleccionar rol</option>
           </select>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-2">Email</label>
-          <input type="email" name="email" placeholder="ejemplo@correo.com"
-                 class="w-full px-3 py-2 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:border-cyan-500 focus:outline-none">
+          <label class="block text-sm font-medium text-gray-300 mb-2">Fecha de Nacimiento</label>
+          <input type="date" name="fecha_nacimiento"
+                 class="w-full px-3 py-2 bg-black/30 border border-white/20 rounded-lg text-white focus:border-cyan-500 focus:outline-none">
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-2">Teléfono</label>
-          <input type="tel" name="telefono" placeholder="(809) 000-0000"
+          <label class="block text-sm font-medium text-gray-300 mb-2">Salario</label>
+          <input type="number" name="salario" placeholder="0.00" min="0" step="0.01"
                  class="w-full px-3 py-2 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:border-cyan-500 focus:outline-none">
         </div>
         <div>
@@ -1265,6 +1273,28 @@ function showAddEmpleadoModal() {
     fechaInput.value = new Date().toISOString().split('T')[0];
   }
 
+  // Load roles for the select
+  (async () => {
+    try {
+      const roles = await window.electronAPI.getRolesEmpleados();
+      const rolSelect = modal.querySelector('select[name="rol_id"]');
+      
+      if (rolSelect && roles.length > 0) {
+        roles.forEach(rol => {
+          const option = document.createElement('option');
+          option.value = rol.id;
+          option.textContent = rol.nombre;
+          if (rol.descripcion) {
+            option.title = rol.descripcion;
+          }
+          rolSelect.appendChild(option);
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error cargando roles de empleados:', error);
+    }
+  })();
+
   // Handle form submission
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1282,15 +1312,14 @@ async function handleAddEmpleado(form, closeModal) {
     const formData = new FormData(form);
     const empleadoData = {
       nombre_completo: formData.get('nombre_completo')?.trim(),
-      cedula: formData.get('cedula')?.trim() || null,
-      cargo: formData.get('cargo')?.trim(),
-      email: formData.get('email')?.trim() || null,
-      telefono: formData.get('telefono')?.trim() || null,
+      cedula: formData.get('cedula')?.trim(),
+      rol_id: parseInt(formData.get('rol_id')),
+      fecha_nacimiento: formData.get('fecha_nacimiento') || null,
+      salario: parseFloat(formData.get('salario')) || 0,
       fecha_ingreso: formData.get('fecha_ingreso') || new Date().toISOString().split('T')[0]
     };
 
     console.log('📤 Datos del empleado a enviar:', empleadoData);
-    console.log('📅 Fecha de ingreso específica:', empleadoData.fecha_ingreso);
 
     // Validación adicional
     if (!empleadoData.nombre_completo) {
@@ -1298,8 +1327,13 @@ async function handleAddEmpleado(form, closeModal) {
       return;
     }
 
-    if (!empleadoData.cargo) {
-      showNotification('El cargo es requerido', 'error');
+    if (!empleadoData.cedula) {
+      showNotification('La cédula es requerida', 'error');
+      return;
+    }
+
+    if (!empleadoData.rol_id) {
+      showNotification('Debe seleccionar un rol', 'error');
       return;
     }
 
@@ -1307,7 +1341,7 @@ async function handleAddEmpleado(form, closeModal) {
     if (result.success) {
       closeModal();
       loadEmpleadosContent(); // Recargar la lista
-      showNotification(`Empleado agregado exitosamente. Usuario: ${result.username}, Contraseña: ${result.password}`, 'success');
+      showNotification('Empleado agregado exitosamente', 'success');
     } else {
       showNotification('Error al agregar empleado: ' + result.message, 'error');
     }
@@ -1320,10 +1354,62 @@ async function handleAddEmpleado(form, closeModal) {
   }
 }
 
+// Función para manejar editar empleado
+async function handleEditEmpleado(form, empleadoId, closeModal) {
+  const submitBtn = form.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Guardando...';
+
+  try {
+    const formData = new FormData(form);
+    const empleadoData = {
+      nombre_completo: formData.get('nombre_completo')?.trim(),
+      cedula: formData.get('cedula')?.trim(),
+      rol_id: parseInt(formData.get('rol_id')),
+      fecha_nacimiento: formData.get('fecha_nacimiento') || null,
+      salario: parseFloat(formData.get('salario')) || 0,
+      fecha_ingreso: formData.get('fecha_ingreso') || null
+    };
+
+    console.log('📤 Datos del empleado a actualizar:', empleadoData);
+
+    // Validación adicional
+    if (!empleadoData.nombre_completo) {
+      showNotification('El nombre completo es requerido', 'error');
+      return;
+    }
+
+    if (!empleadoData.cedula) {
+      showNotification('La cédula es requerida', 'error');
+      return;
+    }
+
+    if (!empleadoData.rol_id) {
+      showNotification('Debe seleccionar un rol', 'error');
+      return;
+    }
+
+    const result = await window.electronAPI.updateEmpleado(empleadoId, empleadoData);
+    if (result.success) {
+      closeModal();
+      loadEmpleadosContent(); // Recargar la lista
+      showNotification('Empleado actualizado exitosamente', 'success');
+    } else {
+      showNotification('Error al actualizar empleado: ' + result.message, 'error');
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    showNotification('Error al actualizar empleado', 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Guardar Cambios';
+  }
+}
+
 // Función para filtrar empleados
 async function filterEmpleados() {
   const searchTerm = document.getElementById('search-empleados')?.value.toLowerCase() || '';
-  const cargoFilter = document.getElementById('filter-cargo')?.value || '';
+  const rolFilter = document.getElementById('filter-cargo')?.value || '';
   const estadoFilter = document.getElementById('filter-estado')?.value || '';
 
   try {
@@ -1331,10 +1417,10 @@ async function filterEmpleados() {
     const filteredEmpleados = empleados.filter(empleado => {
       const matchesSearch = empleado.nombre_completo.toLowerCase().includes(searchTerm) ||
                            (empleado.cedula && empleado.cedula.includes(searchTerm));
-      const matchesCargo = !cargoFilter || empleado.cargo === cargoFilter;
+      const matchesRol = !rolFilter || empleado.cargo === rolFilter;
       const matchesEstado = !estadoFilter || empleado.activo.toString() === estadoFilter;
       
-      return matchesSearch && matchesCargo && matchesEstado;
+      return matchesSearch && matchesRol && matchesEstado;
     });
 
     // Usar la nueva función para poblar las tablas separadas
@@ -1368,11 +1454,167 @@ async function toggleEmpleadoStatus(id, currentStatus) {
 // Función para editar empleado
 async function editEmpleado(id) {
   console.log('✏️ Editando empleado con ID:', id);
-  showNotification('Función de editar empleado en desarrollo', 'info');
-  // TODO: Implementar modal de edición de empleado
+  
+  try {
+    // Obtener datos del empleado
+    const empleados = await window.electronAPI.getEmpleados();
+    const empleado = empleados.find(emp => emp.id === id);
+    
+    if (!empleado) {
+      showNotification('Empleado no encontrado', 'error');
+      return;
+    }
+    
+    // Verificar si ya hay un modal
+    const existingModal = document.querySelector('.modal-overlay');
+    if (existingModal) {
+      console.log('⚠️ Modal ya existe, removiendo...');
+      existingModal.remove();
+    }
+    
+    // Crear modal
+    const modal = document.createElement('div');
+    modal.id = 'edit-empleado-modal';
+    modal.className = 'fixed bg-black/50 flex items-center justify-center p-4 modal-overlay';
+    
+    // Detectar si estamos en desktop (>= 1024px) para ajustar la posición del modal
+    const isDesktop = window.innerWidth >= 1024;
+    const sidebar = document.getElementById('sidebar');
+    const sidebarVisible = isDesktop && sidebar && !sidebar.classList.contains('hidden');
+    
+    const leftOffset = sidebarVisible ? '256px' : '0px';
+    const widthCalc = sidebarVisible ? 'calc(100vw - 256px)' : '100vw';
+    
+    modal.style.cssText = `z-index: 100000 !important; position: fixed !important; top: 0 !important; left: ${leftOffset} !important; width: ${widthCalc} !important; height: 100vh !important; display: flex !important;`;
+    
+    console.log('📝 Creando contenido del modal de edición...');
+    modal.innerHTML = `
+      <div class="bg-gray-900 rounded-xl border border-white/10 w-full max-w-md relative modal-content">
+        <div class="flex items-center justify-between p-6 border-b border-white/10">
+          <h3 class="text-lg font-semibold text-white">Editar Empleado</h3>
+          <button id="close-modal" class="text-gray-400 hover:text-white">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <form id="edit-empleado-form" class="p-6 space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-2">Nombre Completo *</label>
+            <input type="text" name="nombre_completo" required 
+                   class="w-full px-3 py-2 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:border-cyan-500 focus:outline-none" value="${empleado.nombre_completo || ''}">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-2">Cédula *</label>
+            <input type="text" name="cedula" required placeholder="000-0000000-0"
+                   class="w-full px-3 py-2 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:border-cyan-500 focus:outline-none" value="${empleado.cedula || ''}">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-2">Rol *</label>
+            <select name="rol_id" required
+                    class="w-full px-3 py-2 bg-black/30 border border-white/20 rounded-lg text-white focus:border-cyan-500 focus:outline-none">
+              <option value="">Seleccionar rol</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-2">Fecha de Nacimiento</label>
+            <input type="date" name="fecha_nacimiento"
+                   class="w-full px-3 py-2 bg-black/30 border border-white/20 rounded-lg text-white focus:border-cyan-500 focus:outline-none" value="${empleado.fecha_nacimiento ? empleado.fecha_nacimiento.split('T')[0] : ''}">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-2">Salario</label>
+            <input type="number" name="salario" placeholder="0.00" min="0" step="0.01"
+                   class="w-full px-3 py-2 bg-black/30 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:border-cyan-500 focus:outline-none" value="${empleado.salario || ''}">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-2">Fecha de Ingreso</label>
+            <input type="date" name="fecha_ingreso"
+                   class="w-full px-3 py-2 bg-black/30 border border-white/20 rounded-lg text-white focus:border-cyan-500 focus:outline-none" value="${empleado.fecha_ingreso ? empleado.fecha_ingreso.split('T')[0] : ''}">
+          </div>
+          <div class="flex justify-end space-x-3 pt-4">
+            <button type="button" id="cancel-btn" class="px-4 py-2 text-gray-400 hover:text-white transition-colors">
+              Cancelar
+            </button>
+            <button type="submit" class="px-6 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-lg hover:from-blue-600 hover:to-cyan-600 transition-all duration-200">
+              Guardar Cambios
+            </button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    console.log('🔧 Agregando modal al DOM...');
+    document.body.appendChild(modal);
+    
+    console.log('✅ Modal agregado. Verificando visibilidad...');
+    console.log('📍 Modal en DOM:', document.getElementById('edit-empleado-modal'));
+    console.log('📍 Modal className:', modal.className);
+    console.log('📍 Modal style:', modal.style.cssText);
+    
+    // Forzar reflow para asegurar que el modal aparezca
+    modal.offsetHeight;
+    
+    console.log('🎯 Configurando event listeners...');
+
+    // Event listeners del modal
+    const closeBtn = document.getElementById('close-modal');
+    const cancelBtn = document.getElementById('cancel-btn');
+    const form = document.getElementById('edit-empleado-form');
+
+    const closeModal = () => {
+      console.log('🚪 Cerrando modal...');
+      if (modal && modal.parentNode) {
+        document.body.removeChild(modal);
+        console.log('✅ Modal cerrado');
+      }
+    };
+
+    console.log('🔗 Asignando event listeners...');
+    closeBtn.addEventListener('click', closeModal);
+    cancelBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+
+    // Load roles for the select and set current value
+    (async () => {
+      try {
+        const roles = await window.electronAPI.getRolesEmpleados();
+        const rolSelect = modal.querySelector('select[name="rol_id"]');
+        
+        if (rolSelect && roles.length > 0) {
+          roles.forEach(rol => {
+            const option = document.createElement('option');
+            option.value = rol.id;
+            option.textContent = rol.nombre;
+            if (rol.descripcion) {
+              option.title = rol.descripcion;
+            }
+            // Set selected if this is the current role of the employee
+            if (empleado.cargo === rol.nombre) {
+              option.selected = true;
+            }
+            rolSelect.appendChild(option);
+          });
+        }
+      } catch (error) {
+        console.error('❌ Error cargando roles de empleados:', error);
+      }
+    })();
+
+    // Handle form submission
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await handleEditEmpleado(form, empleado.id, closeModal);
+    });
+    
+  } catch (error) {
+    console.error('❌ Error obteniendo datos del empleado para editar:', error);
+    showNotification('Error al cargar datos del empleado', 'error');
+  }
 }
 
-// Función para eliminar empleado
+// Función para desactivar empleado
 async function deleteEmpleado(id) {
   // Obtener el usuario actual para verificación adicional
   const currentUser = JSON.parse(localStorage.getItem('currentUser') || '{}');
@@ -1380,24 +1622,24 @@ async function deleteEmpleado(id) {
   
   // Verificar que no se trate del usuario actual
   if (id === currentUserId) {
-    showNotification('No puedes eliminarte a ti mismo', 'error');
+    showNotification('No puedes desactivarte a ti mismo', 'error');
     return;
   }
   
-  if (confirm('¿Estás seguro de que quieres eliminar este empleado? Esta acción no se puede deshacer.')) {
+  if (confirm('¿Estás seguro de que quieres desactivar este empleado? El empleado podrá ser reactivado posteriormente.')) {
     try {
-      console.log('🗑️ Intentando eliminar empleado con ID:', id);
+      console.log('🗑️ Intentando desactivar empleado con ID:', id);
       const result = await window.electronAPI.deleteEmpleado(id);
       
       if (result.success) {
         loadEmpleadosContent(); // Recargar la lista
-        showNotification(result.message || 'Empleado eliminado exitosamente', 'success');
+        showNotification(result.message || 'Empleado desactivado exitosamente', 'success');
       } else {
-        showNotification(result.message || 'Error al eliminar empleado', 'error');
+        showNotification(result.message || 'Error al desactivar empleado', 'error');
       }
     } catch (error) {
       console.error('Error:', error);
-      showNotification('Error al eliminar empleado', 'error');
+      showNotification('Error al desactivar empleado', 'error');
     }
   }
 }

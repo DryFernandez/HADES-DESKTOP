@@ -264,7 +264,7 @@ async function getDashboardStats() {
 
         // Total de empleados activos
         try {
-            const [empleadosCount] = await connection.execute('SELECT COUNT(*) as total FROM users WHERE local_id IS NOT NULL AND activo = TRUE');
+            const [empleadosCount] = await connection.execute('SELECT COUNT(*) as total FROM empleados WHERE activo = TRUE');
             stats.totalEmpleados = empleadosCount[0].total;
         } catch (error) {
             console.error('❌ Error contando empleados:', error);
@@ -407,10 +407,9 @@ async function getRecentActivity() {
         // Últimos empleados agregados
         try {
             const [empleados] = await connection.execute(`
-                SELECT nombre_completo as nombre, '' as apellido, fecha_creacion as fecha_ingreso
-                FROM users
-                WHERE local_id IS NOT NULL
-                ORDER BY fecha_creacion DESC
+                SELECT nombre_completo as nombre, '' as apellido, fecha_ingreso as fecha_ingreso
+                FROM empleados
+                ORDER BY fecha_ingreso DESC
                 LIMIT 2
             `);
             
@@ -477,7 +476,7 @@ async function getProfileData(userId = null, userType = 'local') {
                 
                 // Obtener estadísticas del local
                 const [employeeCount] = await connection.execute(
-                    'SELECT COUNT(*) as total FROM users WHERE local_id = ? AND activo = TRUE',
+                    'SELECT COUNT(*) as total FROM empleados WHERE local_id = ? AND activo = TRUE',
                     [safeLocalId]
                 );
                 
@@ -495,10 +494,11 @@ async function getProfileData(userId = null, userType = 'local') {
                 
                 // Obtener lista de empleados
                 const [employees] = await connection.execute(`
-                    SELECT nombre_completo, cargo, activo 
-                    FROM users 
-                    WHERE local_id = ? AND activo = TRUE
-                    ORDER BY nombre_completo
+                    SELECT e.nombre_completo, re.nombre as cargo, e.activo 
+                    FROM empleados e
+                    LEFT JOIN roles_empleados re ON e.rol_id = re.id
+                    WHERE e.local_id = ? AND e.activo = TRUE
+                    ORDER BY e.nombre_completo
                 `, [safeLocalId]);
                 
                 return {
@@ -584,19 +584,21 @@ async function getEmpleados() {
         
         const [empleados] = await connection.execute(`
             SELECT 
-                u.id,
-                u.username,
-                u.nombre_completo,
-                u.cedula,
-                u.cargo,
-                u.activo,
-                u.ultimo_acceso as fecha_ingreso,
-                u.ultimo_acceso,
+                e.id,
+                e.nombre_completo,
+                e.cedula,
+                e.fecha_nacimiento,
+                e.salario,
+                e.activo,
+                e.fecha_ingreso,
+                re.nombre as cargo,
+                l.nombre_comercial as local_nombre,
                 'No especificado' as email,
                 'No especificado' as telefono
-            FROM users u
-            WHERE u.local_id IS NOT NULL
-            ORDER BY u.nombre_completo ASC
+            FROM empleados e
+            LEFT JOIN roles_empleados re ON e.rol_id = re.id
+            LEFT JOIN locales l ON e.local_id = l.id
+            ORDER BY e.nombre_completo ASC
         `);
         
         return empleados;
@@ -630,72 +632,51 @@ async function addEmpleado(empleadoData) {
             return { success: false, message: 'El nombre completo es requerido' };
         }
         
-        if (!empleadoData.cargo || empleadoData.cargo.trim() === '') {
-            return { success: false, message: 'El cargo es requerido' };
-        }
+        // Asignar rol por defecto: Vendedor (ID 2) para empleados nuevos
+        // Si se especifica un rol_id en los datos, usarlo; sino usar Vendedor
+        const rolId = empleadoData.rol_id || 2; // 2 = Vendedor
         
-        // Generar username automático basado en el nombre
-        const username = empleadoData.nombre_completo
-            .toLowerCase()
-            .replace(/\s+/g, '.')
-            .replace(/[áàäâ]/g, 'a')
-            .replace(/[éèëê]/g, 'e')
-            .replace(/[íìïî]/g, 'i')
-            .replace(/[óòöô]/g, 'o')
-            .replace(/[úùüû]/g, 'u')
-            .replace(/ñ/g, 'n')
-            .replace(/[^a-z0-9.]/g, '');
-        
-        // Verificar que el username no exista
-        const [existingUser] = await connection.execute(
-            'SELECT id FROM users WHERE username = ?',
-            [username]
-        );
-        
-        if (existingUser.length > 0) {
-            return { success: false, message: 'Ya existe un usuario con ese nombre' };
+        // Si el rol es Administrador (ID 1), desactivar todos los demás administradores activos
+        if (rolId === 1) {
+            console.log('👑 Asignando rol de Administrador - Desactivando otros administradores...');
+            await connection.execute(
+                'UPDATE empleados SET activo = FALSE WHERE rol_id = 1 AND activo = TRUE'
+            );
+            console.log('✅ Otros administradores desactivados');
         }
         
         // Preparar datos para inserción
         const insertData = [
             localId,
-            username,
-            'empleado123', // Contraseña por defecto
-            empleadoData.nombre_completo,
+            rolId,
             safeParam(empleadoData.cedula),
-            empleadoData.cargo,
-            safeParam(empleadoData.email),
-            safeParam(empleadoData.telefono),
-            safeParam(empleadoData.fecha_ingreso),
-            false, // No es propietario
+            empleadoData.nombre_completo,
+            safeParam(empleadoData.fecha_nacimiento),
+            safeParam(empleadoData.salario) || 0, // Salario por defecto 0
+            safeParam(empleadoData.fecha_ingreso) || new Date().toISOString().split('T')[0], // Fecha actual por defecto
             true   // Activo por defecto
         ];
         
         console.log('💾 Datos a insertar:', insertData);
         
-        // Insertar nuevo empleado
+        // Insertar nuevo empleado en la tabla empleados
         const [result] = await connection.execute(`
-            INSERT INTO users (
+            INSERT INTO empleados (
                 local_id, 
-                username, 
-                password_hash, 
-                nombre_completo, 
+                rol_id, 
                 cedula, 
-                cargo, 
-                email,
-                telefono,
+                nombre_completo, 
+                fecha_nacimiento,
+                salario,
                 fecha_ingreso,
-                es_propietario, 
                 activo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `, insertData);
         
         return { 
             success: true, 
             id: result.insertId,
-            message: 'Empleado agregado exitosamente',
-            username: username,
-            password: 'empleado123'
+            message: 'Empleado agregado exitosamente'
         };
         
     } catch (error) {
@@ -712,8 +693,50 @@ async function toggleEmpleadoStatus(id, newStatus) {
     try {
         connection = await getConnection();
         
+        // Si se está desactivando un empleado, verificar si es el último administrador activo
+        if (newStatus === false) {
+            // Obtener el rol del empleado que se va a desactivar
+            const [empleados] = await connection.execute(
+                'SELECT rol_id, nombre_completo FROM empleados WHERE id = ?',
+                [id]
+            );
+            
+            if (empleados.length > 0 && empleados[0].rol_id === 1) {
+                // Es administrador - verificar si es el último administrador activo
+                const [adminCount] = await connection.execute(
+                    'SELECT COUNT(*) as total FROM empleados WHERE rol_id = 1 AND activo = TRUE'
+                );
+                
+                if (adminCount[0].total <= 1) {
+                    return { 
+                        success: false, 
+                        message: 'No se puede desactivar el último administrador activo. Debe haber al menos un administrador activo en el sistema.' 
+                    };
+                }
+            }
+        }
+        
+        // Si se está activando un empleado, verificar si es administrador
+        if (newStatus === true) {
+            // Obtener el rol del empleado que se va a activar
+            const [empleados] = await connection.execute(
+                'SELECT rol_id, nombre_completo FROM empleados WHERE id = ?',
+                [id]
+            );
+            
+            if (empleados.length > 0 && empleados[0].rol_id === 1) {
+                // Es administrador - desactivar todos los demás administradores activos
+                console.log('👑 Activando administrador - Desactivando otros administradores...');
+                await connection.execute(
+                    'UPDATE empleados SET activo = FALSE WHERE rol_id = 1 AND activo = TRUE AND id != ?',
+                    [id]
+                );
+                console.log('✅ Otros administradores desactivados');
+            }
+        }
+        
         await connection.execute(
-            'UPDATE users SET activo = ? WHERE id = ?',
+            'UPDATE empleados SET activo = ? WHERE id = ?',
             [newStatus, id]
         );
         
@@ -727,17 +750,17 @@ async function toggleEmpleadoStatus(id, newStatus) {
     }
 }
 
-// Eliminar empleado
+// Desactivar empleado (en lugar de eliminar)
 async function deleteEmpleado(id) {
     let connection;
     try {
         connection = await getConnection();
         
-        console.log('🗑️ Intentando eliminar empleado con ID:', id);
+        console.log('� Intentando desactivar empleado con ID:', id);
         
-        // Verificar que el empleado existe y obtener su información
+        // Verificar que el empleado existe
         const [empleados] = await connection.execute(
-            'SELECT id, nombre_completo, es_propietario, cargo FROM users WHERE id = ?',
+            'SELECT id, nombre_completo, rol_id FROM empleados WHERE id = ?',
             [id]
         );
         
@@ -747,27 +770,109 @@ async function deleteEmpleado(id) {
         
         const empleado = empleados[0];
         
-        // Verificar que no sea propietario o gerente general
-        if (empleado.es_propietario || empleado.cargo === 'Gerente General') {
-            return { success: false, message: 'No se puede eliminar a un propietario o gerente general' };
+        // Si es administrador, verificar que no sea el último administrador activo
+        if (empleado.rol_id === 1) {
+            const [adminCount] = await connection.execute(
+                'SELECT COUNT(*) as total FROM empleados WHERE rol_id = 1 AND activo = TRUE'
+            );
+            
+            if (adminCount[0].total <= 1) {
+                return { 
+                    success: false, 
+                    message: 'No se puede desactivar el último administrador activo. Debe haber al menos un administrador activo en el sistema.' 
+                };
+            }
         }
         
-        console.log('✅ Empleado válido para eliminación:', empleado.nombre_completo);
+        console.log('✅ Empleado válido para desactivación:', empleado.nombre_completo);
         
-        // En lugar de eliminar, desactivamos el empleado
+        // En lugar de eliminar, marcar como inactivo
         await connection.execute(
-            'UPDATE users SET activo = FALSE WHERE id = ?',
+            'UPDATE empleados SET activo = FALSE WHERE id = ?',
             [id]
         );
         
         return { 
             success: true, 
-            message: `Empleado ${empleado.nombre_completo} ha sido eliminado exitosamente` 
+            message: `Empleado ${empleado.nombre_completo} ha sido desactivado exitosamente` 
         };
         
     } catch (error) {
-        console.error('❌ Error eliminando empleado:', error);
-        return { success: false, message: 'Error al eliminar empleado: ' + error.message };
+        console.error('❌ Error desactivando empleado:', error);
+        return { success: false, message: 'Error al desactivar empleado: ' + error.message };
+    } finally {
+        if (connection) connection.release();
+    }
+}
+
+// Actualizar empleado
+async function updateEmpleado(id, empleadoData) {
+    let connection;
+    try {
+        connection = await getConnection();
+        
+        console.log('📝 Datos del empleado para actualizar:', empleadoData);
+        
+        // Validar datos requeridos
+        if (!empleadoData.nombre_completo || empleadoData.nombre_completo.trim() === '') {
+            return { success: false, message: 'El nombre completo es requerido' };
+        }
+        
+        if (!empleadoData.cedula || empleadoData.cedula.trim() === '') {
+            return { success: false, message: 'La cédula es requerida' };
+        }
+        
+        if (!empleadoData.rol_id) {
+            return { success: false, message: 'Debe seleccionar un rol' };
+        }
+        
+        // Si el rol está cambiando a Administrador (ID 1), desactivar todos los demás administradores activos
+        if (empleadoData.rol_id === 1) {
+            console.log('👑 Cambiando rol a Administrador - Desactivando otros administradores...');
+            await connection.execute(
+                'UPDATE empleados SET activo = FALSE WHERE rol_id = 1 AND activo = TRUE AND id != ?',
+                [id]
+            );
+            console.log('✅ Otros administradores desactivados');
+        }
+        
+        // Preparar datos para actualización
+        const updateData = [
+            empleadoData.nombre_completo,
+            empleadoData.cedula,
+            empleadoData.rol_id,
+            safeParam(empleadoData.fecha_nacimiento),
+            safeParam(empleadoData.salario) || 0,
+            safeParam(empleadoData.fecha_ingreso),
+            id
+        ];
+        
+        console.log('💾 Datos a actualizar:', updateData);
+        
+        // Actualizar empleado en la tabla empleados
+        const [result] = await connection.execute(`
+            UPDATE empleados SET
+                nombre_completo = ?,
+                cedula = ?,
+                rol_id = ?,
+                fecha_nacimiento = ?,
+                salario = ?,
+                fecha_ingreso = ?
+            WHERE id = ?
+        `, updateData);
+        
+        if (result.affectedRows === 0) {
+            return { success: false, message: 'Empleado no encontrado' };
+        }
+        
+        return { 
+            success: true, 
+            message: 'Empleado actualizado exitosamente'
+        };
+        
+    } catch (error) {
+        console.error('❌ Error actualizando empleado:', error);
+        return { success: false, message: 'Error al actualizar empleado: ' + error.message };
     } finally {
         if (connection) connection.release();
     }
@@ -1119,6 +1224,38 @@ async function getUnidadesMedida() {
     }
 }
 
+// Obtener roles de empleados
+async function getRolesEmpleados() {
+    let connection;
+    try {
+        connection = await getConnection();
+
+        const [roles] = await connection.execute(`
+            SELECT id, nombre, descripcion
+            FROM roles_empleados
+            WHERE activo = TRUE
+            ORDER BY nombre ASC
+        `);
+
+        return roles;
+    } catch (error) {
+        console.error('❌ Error obteniendo roles de empleados:', error);
+        console.log('⚠️ Retornando datos mock de roles de empleados...');
+
+        // Datos mock para modo offline
+        return [
+            { id: 1, nombre: 'Administrador', descripcion: 'Acceso completo al sistema del local' },
+            { id: 2, nombre: 'Vendedor', descripcion: 'Manejo de ventas y atención al cliente' },
+            { id: 3, nombre: 'Cajero', descripcion: 'Procesamiento de pagos y facturación' },
+            { id: 4, nombre: 'Delivery', descripcion: 'Entrega de pedidos a domicilio' },
+            { id: 5, nombre: 'Almacenista', descripcion: 'Gestión de inventario y almacén' },
+            { id: 6, nombre: 'Supervisor', descripcion: 'Supervisión de operaciones' }
+        ];
+    } finally {
+        if (connection) connection.release();
+    }
+}
+
 // ===============================
 // Funciones para gestión de inventarios
 // ===============================
@@ -1305,6 +1442,38 @@ async function testConnection() {
     }
 }
 
+// Función para verificar y crear administrador si no existe ninguno activo
+async function ensureActiveAdmin() {
+    try {
+        const empleados = await getEmpleados();
+        const adminActivos = empleados.filter(emp => emp.cargo === 'Administrador' && emp.activo);
+
+        if (adminActivos.length === 0) {
+            console.log('⚠️ No hay administradores activos. Creando administrador por defecto...');
+
+            const result = await addEmpleado({
+                nombre_completo: 'Administrador Sistema',
+                cedula: '000-0000000-0',
+                rol_id: 1, // Administrador
+                fecha_ingreso: new Date().toISOString().split('T')[0]
+            });
+
+            if (result.success) {
+                console.log('✅ Administrador por defecto creado exitosamente');
+                return result;
+            } else {
+                throw new Error('No se pudo crear el administrador por defecto');
+            }
+        } else {
+            console.log(`✅ Hay ${adminActivos.length} administrador(es) activo(s)`);
+            return { success: true, message: 'Ya existe al menos un administrador activo' };
+        }
+    } catch (error) {
+        console.error('❌ Error al verificar administradores:', error);
+        return { success: false, message: error.message };
+    }
+}
+
 module.exports = {
     authenticateUser,
     authenticateAdmin,
@@ -1315,6 +1484,7 @@ module.exports = {
     getProfileData,
     getEmpleados,
     addEmpleado,
+    updateEmpleado,
     toggleEmpleadoStatus,
     deleteEmpleado,
     getProductos,
@@ -1325,6 +1495,7 @@ module.exports = {
     getCategorias,
     getMarcas,
     getUnidadesMedida,
+    getRolesEmpleados,
     getInventariosPorLocal,
     addInventario,
     updateInventario,
@@ -1332,5 +1503,6 @@ module.exports = {
     testConnection,
     getConnection,
     closePool,
-    dbConfig
+    dbConfig,
+    ensureActiveAdmin
 };

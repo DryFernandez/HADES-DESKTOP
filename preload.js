@@ -59,6 +59,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return await ipcRenderer.invoke('add-empleado', empleadoData)
   },
 
+  updateEmpleado: async (id, empleadoData) => {
+    return await ipcRenderer.invoke('update-empleado', id, empleadoData)
+  },
+
   toggleEmpleadoStatus: async (id, status) => {
     return await ipcRenderer.invoke('toggle-empleado-status', id, status)
   },
@@ -98,6 +102,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   getUnidadesMedida: async () => {
     return await ipcRenderer.invoke('get-unidades-medida')
+  },
+
+  getRolesEmpleados: async () => {
+    return await ipcRenderer.invoke('get-roles-empleados')
   },
 
   // Obtener inventarios por local

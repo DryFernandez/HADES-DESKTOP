@@ -231,6 +231,16 @@ ipcMain.handle('add-empleado', async (event, empleadoData) => {
   }
 });
 
+ipcMain.handle('update-empleado', async (event, id, empleadoData) => {
+  try {
+    const result = await db.updateEmpleado(id, empleadoData);
+    return result;
+  } catch (error) {
+    console.error('❌ Error actualizando empleado:', error);
+    return { success: false, message: error.message };
+  }
+});
+
 ipcMain.handle('toggle-empleado-status', async (event, id, status) => {
   try {
     const result = await db.toggleEmpleadoStatus(id, status);
@@ -331,6 +341,16 @@ ipcMain.handle('get-unidades-medida', async () => {
     return unidades;
   } catch (error) {
     console.error('❌ Error obteniendo unidades de medida:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('get-roles-empleados', async () => {
+  try {
+    const roles = await db.getRolesEmpleados();
+    return roles;
+  } catch (error) {
+    console.error('❌ Error obteniendo roles de empleados:', error);
     return [];
   }
 });

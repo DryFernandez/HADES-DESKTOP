@@ -1333,6 +1333,10 @@ video {
   --tw-gradient-to: rgb(59 130 246 / 0.1) var(--tw-gradient-to-position);
 }
 
+.to-cyan-500 {
+  --tw-gradient-to: #06b6d4 var(--tw-gradient-to-position);
+}
+
 .to-cyan-500\/20 {
   --tw-gradient-to: rgb(6 182 212 / 0.2) var(--tw-gradient-to-position);
 }
@@ -1868,9 +1872,20 @@ button:focus {
   background-color: rgb(234 179 8 / 0.2);
 }
 
+.hover\:bg-yellow-700:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(161 98 7 / var(--tw-bg-opacity, 1));
+}
+
 .hover\:from-blue-500\/30:hover {
   --tw-gradient-from: rgb(59 130 246 / 0.3) var(--tw-gradient-from-position);
   --tw-gradient-to: rgb(59 130 246 / 0) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.hover\:from-blue-600:hover {
+  --tw-gradient-from: #2563eb var(--tw-gradient-from-position);
+  --tw-gradient-to: rgb(37 99 235 / 0) var(--tw-gradient-to-position);
   --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 }
 
@@ -1938,6 +1953,10 @@ button:focus {
 
 .hover\:to-cyan-500\/30:hover {
   --tw-gradient-to: rgb(6 182 212 / 0.3) var(--tw-gradient-to-position);
+}
+
+.hover\:to-cyan-600:hover {
+  --tw-gradient-to: #0891b2 var(--tw-gradient-to-position);
 }
 
 .hover\:to-emerald-500\/20:hover {
